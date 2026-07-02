@@ -1,0 +1,43 @@
+# Datos — nunca al repo, son GBs y no aportan nada versionados
+data/raw/
+data/processed/
+
+# Variables de entorno — API keys, nunca a git
+.env
+.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Jupyter, si usas notebooks para exploración
+.ipynb_checkpoints/
+*.ipynb
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Modelos o caches locales si usas alguno
+.cache/
+*.pkl
+*.faiss
