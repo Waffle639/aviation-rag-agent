@@ -2,7 +2,7 @@ import requests
 import os
 import re
 import time
-
+import fitz
 
 class DataDownloader:
     """Simple class to download files from URLs."""
@@ -17,16 +17,18 @@ class DataDownloader:
     
     def __init__(self, carpeta_salida="data/raw/"):
         self.carpeta_salida = carpeta_salida
+        self.pdf_to_txt_route = "data/raw/pdf_to_txt/"
         # Create folder if it doesn't exist
         if not os.path.exists(carpeta_salida):
             os.makedirs(carpeta_salida)
+        if not os.path.exists(self.pdf_to_txt_route):
+            os.makedirs(self.pdf_to_txt_route)
     
     def descargar(self, url):
         """Download a single file from a URL."""
         # Get filename from URL
         nombre_archivo = url.split('/')[-1]
         ruta_completa = os.path.join(self.carpeta_salida, nombre_archivo)
-        
         
         try:
             respuesta = requests.get(url)
@@ -61,6 +63,21 @@ class DataDownloader:
             else:
                 failed_downloads += 1
         print(f"Download completed: {successful_downloads} successful, {failed_downloads} failed out of {total_urls} URLs.")
+        for url in urls:
+            doc = url.split('/')[-1]
+            pdf_path = os.path.join(self.carpeta_salida, doc)
+            if os.path.exists(pdf_path):
+                try:
+                    with fitz.open(pdf_path) as pdf_document:
+                        text = ""
+                        for page in pdf_document:
+                            text += page.get_text()
+                        txt_path = os.path.join(self.pdf_to_txt_route, doc.replace('.pdf', '.txt'))
+                        with open(txt_path, 'w', encoding='utf-8') as txt_file:
+                            txt_file.write(text)
+                        print(f"Extracted text from {pdf_path} to {txt_path}")
+                except Exception as e:
+                    print(f"Error extracting text from {pdf_path}: {e}")
         
         
     
@@ -136,6 +153,8 @@ class DataDownloader:
         print(
             f"Wikipedia download completed: {successful_downloads} successful, {failed_downloads} failed out of {total_titles} titles."
         )
+        
+
 
 
 
@@ -145,8 +164,7 @@ if __name__ == "__main__":
     # Create downloader
     downloader = DataDownloader()
 
-    urls = ["https://www.boeing.com/content/dam/boeing/v2/airports/acaps/707.pdf",
-            "https://www.boeing.com/content/dam/boeing/v2/airports/acaps/747-400_Rev_F.pdf",
+    urls = ["https://www.boeing.com/content/dam/boeing/v2/airports/acaps/747-400_Rev_F.pdf",
             "https://www.boeing.com/content/dam/boeing/boeingdotcom/commercial/airports/acaps/748_REV_C.pdf",
             "https://www.aircraft.airbus.com/sites/g/files/jlcbta126/files/2023-08/ac_a330_jul2023_0.pdf",
             "https://www.aircraft.airbus.com/sites/g/files/jlcbta126/files/2025-01/AC_A320_0624.pdf",
@@ -176,3 +194,6 @@ if __name__ == "__main__":
     
     downloader.download_multiple(urls)
     downloader.download_wikipedia_extracts(wiki_planes_titles, idioma="en")
+    
+    
+    
