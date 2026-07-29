@@ -36,7 +36,7 @@ def chunk_text(text, chunk_size=1000, overlap=200):
 
 
 def save_chunks_to_files(chunks, plane, font):
-    output_dir = f"data/processed/chunks/{plane}/{font}"
+    output_dir = f"data/processed/chunks/{plane}"
     os.makedirs(output_dir, exist_ok=True)
 
     for i, chunk_text in enumerate(chunks):
@@ -67,6 +67,8 @@ if __name__ == "__main__":
     docs = wiki_docs + pdf_docs
     
     for doc in docs:
+        if doc == ".gitkeep":
+            continue
         plane = doc.split('.txt')[0]
         doc_font = "wiki" if doc in wiki_docs else "pdf" if doc in pdf_docs else "unknown"
         txt_path = os.path.join(wiki_route if doc_font == "wiki" else pdf_route, doc)
