@@ -12,7 +12,7 @@ create extension if not exists vector;
 
 create table if not exists documents (
     id bigserial primary key,
-    plane text not null,
+    aircraft text not null,
     font text not null,
     chunk_id text unique not null,
     texto text not null,
@@ -21,7 +21,7 @@ create table if not exists documents (
 );
 
 -- Fast filtering by aircraft
-create index if not exists idx_documents_plane on documents (plane);
+create index if not exists idx_documents_aircraft on documents (aircraft);
 
 -- Vector similarity search. HNSW is chosen over IVFFlat: better recall,
 -- no training step, and it works correctly even on an empty table
@@ -38,12 +38,12 @@ drop function if exists buscar_similares;
 -- filtered by aircraft. similarity is cosine similarity in [0, 1].
 create or replace function find_similar(
     query_embedding vector(1536),
-    plane_filter text default null,
+    aircraft_filter text default null,
     top_k int default 5
 )
 returns table (
     texto text,
-    plane text,
+    aircraft text,
     font text,
     chunk_id text,
     similarity float
@@ -52,12 +52,12 @@ language sql stable
 as $$
     select
         texto,
-        plane,
+        aircraft,
         font,
         chunk_id,
         1 - (embedding <=> query_embedding) as similarity
     from documents
-    where plane_filter is null or plane = plane_filter
+    where aircraft_filter is null or aircraft = aircraft_filter
     order by embedding <=> query_embedding
     limit top_k
 $$;

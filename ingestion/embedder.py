@@ -20,10 +20,10 @@ MAX_RETRIES = 5
 CHUNKS_ROUTE = "data/processed/chunks"
 
 UPSERT_SQL = """
-    insert into documents (plane, font, chunk_id, texto, embedding)
+    insert into documents (aircraft, font, chunk_id, texto, embedding)
     values %s
     on conflict (chunk_id) do update set
-        plane = excluded.plane,
+        aircraft = excluded.aircraft,
         font = excluded.font,
         texto = excluded.texto,
         embedding = excluded.embedding
@@ -60,13 +60,13 @@ register_vector(db_connection)
 def load_chunks(chunks_route=CHUNKS_ROUTE):
 
     chunks = []
-    for plane in sorted(os.listdir(chunks_route)):
-        plane_folder = os.path.join(chunks_route, plane)
-        if not os.path.isdir(plane_folder):
+    for aircraft in sorted(os.listdir(chunks_route)):
+        aircraft_folder = os.path.join(chunks_route, aircraft)
+        if not os.path.isdir(aircraft_folder):
             continue
-        for filename in sorted(os.listdir(plane_folder)):
+        for filename in sorted(os.listdir(aircraft_folder)):
             if filename.endswith(".json"):
-                with open(os.path.join(plane_folder, filename), encoding="utf-8") as f:
+                with open(os.path.join(aircraft_folder, filename), encoding="utf-8") as f:
                     chunks.append(json.load(f))
     return chunks
 
@@ -113,7 +113,7 @@ def upsert_batch(rows):
     Upserts a batch of rows into `documents` in a single round-trip.
 
     Args:
-        rows (list[tuple]): (plane, font, chunk_id, texto, Vector).
+        rows (list[tuple]): (aircraft, font, chunk_id, texto, Vector).
     """
     for attempt in range(1, MAX_RETRIES + 1):
         try:
@@ -131,6 +131,19 @@ def upsert_batch(rows):
                 e, attempt, MAX_RETRIES, wait,
             )
             time.sleep(wait)
+
+
+def embed_text(text):
+    """
+    Converts a single text into an embedding with ONE API call.
+
+    Args:
+        text (str): the text to embed.
+
+    Returns:
+        list[float]: 1536-dim vector.
+    """
+    return embed_batch([text])[0]
 
 
 def run(chunks_route=CHUNKS_ROUTE):

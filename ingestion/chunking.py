@@ -35,16 +35,16 @@ def chunk_text(text, chunk_size=1000, overlap=200):
     return chunks
 
 
-def save_chunks_to_files(chunks, plane, font):
-    output_dir = f"data/processed/chunks/{plane}"
+def save_chunks_to_files(chunks, aircraft, font):
+    output_dir = f"data/processed/chunks/{aircraft}"
     os.makedirs(output_dir, exist_ok=True)
 
     for i, chunk_text in enumerate(chunks):
-        chunk_id = f"{plane.lower()}_{font.lower()}_{i:03d}"
+        chunk_id = f"{aircraft.lower()}_{font.lower()}_{i:03d}"
         chunk_data = {
             "texto": chunk_text,
             "metadata": {
-                "aeronave": plane,
+                "aeronave": aircraft,
                 "fuente": font,
                 "chunk_id": chunk_id,
             }
@@ -69,13 +69,13 @@ if __name__ == "__main__":
     for doc in docs:
         if doc == ".gitkeep":
             continue
-        plane = doc.split('.txt')[0]
+        aircraft = doc.split('.txt')[0]
         doc_font = "wiki" if doc in wiki_docs else "pdf" if doc in pdf_docs else "unknown"
         txt_path = os.path.join(wiki_route if doc_font == "wiki" else pdf_route, doc)
         with open(txt_path, 'r', encoding='utf-8') as file:
             text = file.read()
             chunks = chunk_text(text, chunk_size=1000, overlap=200)
-            save_chunks_to_files(chunks, plane, doc_font)
+            save_chunks_to_files(chunks, aircraft, doc_font)
         
     
    

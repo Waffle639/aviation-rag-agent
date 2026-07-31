@@ -172,7 +172,7 @@ if __name__ == "__main__":
     ]
             
 
-    wiki_planes_titles = [
+    wiki_aircraft_titles = [
     "Boeing 747",
     "Boeing 747-8",
     "Airbus A330",
@@ -193,7 +193,7 @@ if __name__ == "__main__":
     ]
     
     downloader.download_multiple(urls)
-    downloader.download_wikipedia_extracts(wiki_planes_titles, idioma="en")
+    downloader.download_wikipedia_extracts(wiki_aircraft_titles, idioma="en")
     
     
     
