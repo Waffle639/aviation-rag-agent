@@ -15,14 +15,20 @@ register_vector(db_connection)
 
 
 def search_context(question, aircraft=None, top_k=5):
-    """
-    Embeds the question and queries the Supabase database for similar documents based on the embedding.
-    """
     query_vector = embed_text(question)
 
     with db_connection.cursor(cursor_factory=RealDictCursor) as cursor:
         cursor.execute(
-            "SELECT * FROM find_similar(%s, %s, %s)",
+            "SELECT * FROM find_similar_parents(%s, %s, %s)",
             (Vector(query_vector), aircraft, top_k),
         )
-        return cursor.fetchall()
+        results = cursor.fetchall()
+
+        if not results:
+            cursor.execute(
+                "SELECT * FROM find_similar(%s, %s, %s)",
+                (Vector(query_vector), aircraft, top_k),
+            )
+            results = cursor.fetchall()
+
+        return results

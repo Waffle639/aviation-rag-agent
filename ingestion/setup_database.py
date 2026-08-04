@@ -77,22 +77,34 @@ def main():
                      where extname = 'vector'),
                     (select count(*) from information_schema.tables
                      where table_schema = 'public' and table_name = 'documents'),
+                    (select count(*) from information_schema.tables
+                     where table_schema = 'public' and table_name = 'parent_chunks'),
                     (select count(*) from pg_indexes
                      where tablename = 'documents'),
+                    (select count(*) from pg_indexes
+                     where tablename = 'parent_chunks'),
                     (select count(*) from pg_proc p
                      join pg_namespace n on n.oid = p.pronamespace
-                     where n.nspname = 'public' and p.proname = 'find_similar')
+                     where n.nspname = 'public' and p.proname = 'find_similar'),
+                    (select count(*) from pg_proc p
+                     join pg_namespace n on n.oid = p.pronamespace
+                     where n.nspname = 'public' and p.proname = 'find_similar_parents')
             """)
-            extension, table, indexes, function = cursor.fetchone()
+            extension, table_docs, table_parents, idx_docs, idx_parents, func_similar, func_similar_parents = cursor.fetchone()
     finally:
         connection.close()
 
-    print(f"extension vector:      {'OK' if extension == 1 else 'MISSING'}")
-    print(f"table documents:       {'OK' if table == 1 else 'MISSING'}")
-    print(f"indexes (expected 4):  {indexes}")
-    print(f"function find_similar: {'OK' if function == 1 else 'MISSING'}")
+    print(f"extension vector:             {'OK' if extension == 1 else 'MISSING'}")
+    print(f"table documents:              {'OK' if table_docs == 1 else 'MISSING'}")
+    print(f"table parent_chunks:          {'OK' if table_parents == 1 else 'MISSING'}")
+    print(f"indexes documents (exp 5):    {idx_docs}")
+    print(f"indexes parent_chunks (exp 2): {idx_parents}")
+    print(f"function find_similar:        {'OK' if func_similar == 1 else 'MISSING'}")
+    print(f"function find_similar_parents:{'OK' if func_similar_parents == 1 else 'MISSING'}")
 
-    if not (extension == 1 and table == 1 and indexes == 4 and function == 1):
+    if not (extension == 1 and table_docs == 1 and table_parents == 1
+            and idx_docs == 5 and idx_parents == 2
+            and func_similar == 1 and func_similar_parents == 1):
         sys.exit("ERROR: schema verification failed. Check the output above.")
 
     print("Schema applied and verified successfully.")

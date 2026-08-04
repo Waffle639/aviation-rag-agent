@@ -1,82 +1,122 @@
 import os
 import json
+import re
 
 
-def chunk_text(text, chunk_size=1000, overlap=200):
-    """
-    Splits the input text into chunks of specified size with a specified overlap.
+PARENT_SIZE = 2000
+CHILD_SIZE = 500
+CHILD_OVERLAP = 100
 
-    Args:
-        text (str): The input text to be chunked.
-        chunk_size (int): The maximum size of each chunk.
-        overlap (int): The number of overlapping characters between consecutive chunks.
 
-    Returns:
-        list: A list of text chunks.
-    """
-    if chunk_size <= 0:
-        raise ValueError("chunk_size must be a positive integer.")
-    if overlap < 0:
-        raise ValueError("overlap must be a non-negative integer.")
-    if overlap >= chunk_size:
-        raise ValueError("overlap must be less than chunk_size.")
+def clean_text(text):
+    text = text.strip()
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r" *\n *", "\n", text)
+    return text
 
+
+def split_paragraphs(text):
+    raw = [p.strip() for p in text.split("\n\n")]
+    return [p for p in raw if p]
+
+
+def group_paragraphs_into_parents(paragraphs, target_size=PARENT_SIZE):
+    parents = []
+    buffer = []
+    buffer_len = 0
+
+    for para in paragraphs:
+        if buffer and buffer_len + len(para) > target_size:
+            parents.append("\n\n".join(buffer))
+            buffer = []
+            buffer_len = 0
+        buffer.append(para)
+        buffer_len += len(para)
+
+    if buffer:
+        parents.append("\n\n".join(buffer))
+
+    return parents
+
+
+def build_child_chunks(parent_text):
     chunks = []
     start = 0
-    text_length = len(text)
+    text_len = len(parent_text)
 
-    while start < text_length:
-        end = min(start + chunk_size, text_length)
-        chunk = text[start:end]
+    while start < text_len:
+        end = min(start + CHILD_SIZE, text_len)
+        chunk = parent_text[start:end]
         chunks.append(chunk)
-        # Move the start index forward by chunk_size - overlap
-        start += (chunk_size - overlap)
+        if end == text_len:
+            break
+        start += CHILD_SIZE - CHILD_OVERLAP
 
     return chunks
 
 
-def save_chunks_to_files(chunks, aircraft, font):
-    output_dir = f"data/processed/chunks/{aircraft}"
-    os.makedirs(output_dir, exist_ok=True)
+def save_chunks_to_files(parents, children_map, aircraft, font):
+    parent_dir = f"data/processed/parents/{aircraft}"
+    child_dir = f"data/processed/chunks/{aircraft}"
+    os.makedirs(parent_dir, exist_ok=True)
+    os.makedirs(child_dir, exist_ok=True)
 
-    for i, chunk_text in enumerate(chunks):
-        chunk_id = f"{aircraft.lower()}_{font.lower()}_{i:03d}"
-        chunk_data = {
-            "texto": chunk_text,
+    for i, parent_text in enumerate(parents):
+        parent_id = f"{aircraft.lower()}_{font.lower()}_p{i:03d}"
+        parent_data = {
+            "texto": parent_text,
             "metadata": {
                 "aeronave": aircraft,
                 "fuente": font,
-                "chunk_id": chunk_id,
+                "parent_id": parent_id,
             }
         }
+        with open(os.path.join(parent_dir, f"parent_{i + 1}.json"), "w", encoding="utf-8") as f:
+            json.dump(parent_data, f, ensure_ascii=False, indent=2)
 
-        chunk_filename = f"chunk_{i + 1}.json"
-        chunk_path = os.path.join(output_dir, chunk_filename)
-        with open(chunk_path, 'w', encoding='utf-8') as f:json.dump(chunk_data, f, ensure_ascii=False, indent=2)
-            
-            
-# Example usage
+    child_counter = 0
+    for parent_idx, child_texts in enumerate(children_map):
+        parent_id = f"{aircraft.lower()}_{font.lower()}_p{parent_idx:03d}"
+        for child_text in child_texts:
+            chunk_id = f"{aircraft.lower()}_{font.lower()}_c{child_counter:03d}"
+            child_data = {
+                "texto": child_text,
+                "metadata": {
+                    "aeronave": aircraft,
+                    "fuente": font,
+                    "chunk_id": chunk_id,
+                    "parent_id": parent_id,
+                }
+            }
+            with open(os.path.join(child_dir, f"chunk_{child_counter + 1}.json"), "w", encoding="utf-8") as f:
+                json.dump(child_data, f, ensure_ascii=False, indent=2)
+            child_counter += 1
+
+
 if __name__ == "__main__":
-    # Chunking the wikipedia extracts
     wiki_route = "data/raw/wiki"
     pdf_route = "data/raw/pdf_to_txt"
-    
+
     wiki_docs = os.listdir(wiki_route)
     pdf_docs = os.listdir(pdf_route)
-    
+
     docs = wiki_docs + pdf_docs
-    
+
     for doc in docs:
         if doc == ".gitkeep":
             continue
-        aircraft = doc.split('.txt')[0]
+        aircraft = doc.split(".txt")[0]
         doc_font = "wiki" if doc in wiki_docs else "pdf" if doc in pdf_docs else "unknown"
         txt_path = os.path.join(wiki_route if doc_font == "wiki" else pdf_route, doc)
-        with open(txt_path, 'r', encoding='utf-8') as file:
-            text = file.read()
-            chunks = chunk_text(text, chunk_size=1000, overlap=200)
-            save_chunks_to_files(chunks, aircraft, doc_font)
-        
-    
-   
-    
+
+        with open(txt_path, "r", encoding="utf-8") as file:
+            raw_text = file.read()
+
+        text = clean_text(raw_text)
+        paragraphs = split_paragraphs(text)
+        parents = group_paragraphs_into_parents(paragraphs, target_size=PARENT_SIZE)
+        children_map = [build_child_chunks(p) for p in parents]
+        save_chunks_to_files(parents, children_map, aircraft, doc_font)
+
+        print(f"{aircraft}: {len(parents)} parents, {sum(len(c) for c in children_map)} children")

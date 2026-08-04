@@ -12,21 +12,30 @@ from psycopg2.extras import execute_values
 
 load_dotenv()
 
-# --- Configuration -----------------------------------------------------------
-
 EMBEDDING_MODEL = "text-embedding-3-small"
-BATCH_SIZE = 100       
+BATCH_SIZE = 100
 MAX_RETRIES = 5
 CHUNKS_ROUTE = "data/processed/chunks"
+PARENTS_ROUTE = "data/processed/parents"
 
-UPSERT_SQL = """
-    insert into documents (aircraft, font, chunk_id, texto, embedding)
+UPSERT_CHILD_SQL = """
+    insert into documents (aircraft, font, chunk_id, texto, embedding, parent_id)
     values %s
     on conflict (chunk_id) do update set
         aircraft = excluded.aircraft,
         font = excluded.font,
         texto = excluded.texto,
-        embedding = excluded.embedding
+        embedding = excluded.embedding,
+        parent_id = excluded.parent_id
+"""
+
+UPSERT_PARENT_SQL = """
+    insert into parent_chunks (aircraft, font, parent_id, texto)
+    values %s
+    on conflict (parent_id) do update set
+        aircraft = excluded.aircraft,
+        font = excluded.font,
+        texto = excluded.texto
 """
 
 logging.basicConfig(
@@ -55,41 +64,40 @@ db_connection = psycopg2.connect(os.environ["DATABASE_URL"])
 register_vector(db_connection)
 
 
-# --- Pipeline steps ----------------------------------------------------------
+def _load_json_files(route):
+    items = []
+    for entity in sorted(os.listdir(route)):
+        entity_path = os.path.join(route, entity)
+        if not os.path.isdir(entity_path):
+            continue
+        for filename in sorted(os.listdir(entity_path)):
+            if filename.endswith(".json"):
+                with open(os.path.join(entity_path, filename), encoding="utf-8") as f:
+                    items.append(json.load(f))
+    return items
+
 
 def load_chunks(chunks_route=CHUNKS_ROUTE):
+    return _load_json_files(chunks_route)
 
-    chunks = []
-    for aircraft in sorted(os.listdir(chunks_route)):
-        aircraft_folder = os.path.join(chunks_route, aircraft)
-        if not os.path.isdir(aircraft_folder):
-            continue
-        for filename in sorted(os.listdir(aircraft_folder)):
-            if filename.endswith(".json"):
-                with open(os.path.join(aircraft_folder, filename), encoding="utf-8") as f:
-                    chunks.append(json.load(f))
-    return chunks
+
+def load_parents(parents_route=PARENTS_ROUTE):
+    return _load_json_files(parents_route)
 
 
 def get_existing_chunk_ids():
-    """
-    Returns the set of chunk_ids already stored in `documents`.
-    """
     with db_connection.cursor() as cursor:
         cursor.execute("select chunk_id from documents")
         return {row[0] for row in cursor.fetchall()}
 
 
+def get_existing_parent_ids():
+    with db_connection.cursor() as cursor:
+        cursor.execute("select parent_id from parent_chunks")
+        return {row[0] for row in cursor.fetchall()}
+
+
 def embed_batch(texts):
-    """
-    Converts a list of texts into embeddings with ONE API call.
-
-    Args:
-        texts (list[str]): up to BATCH_SIZE texts.
-
-    Returns:
-        list[list[float]]: one 1536-dim vector per input text, same order.
-    """
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             response = openai_client.embeddings.create(
@@ -108,17 +116,11 @@ def embed_batch(texts):
             time.sleep(wait)
 
 
-def upsert_batch(rows):
-    """
-    Upserts a batch of rows into `documents` in a single round-trip.
-
-    Args:
-        rows (list[tuple]): (aircraft, font, chunk_id, texto, Vector).
-    """
+def _upsert_with_retry(sql, rows, label):
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             with db_connection.cursor() as cursor:
-                execute_values(cursor, UPSERT_SQL, rows)
+                execute_values(cursor, sql, rows)
             db_connection.commit()
             return
         except Exception as e:
@@ -127,47 +129,44 @@ def upsert_batch(rows):
                 raise
             wait = 2 ** attempt
             logger.warning(
-                "Upsert failed (%s). Retry %d/%d in %ds.",
-                e, attempt, MAX_RETRIES, wait,
+                "%s upsert failed (%s). Retry %d/%d in %ds.",
+                label, e, attempt, MAX_RETRIES, wait,
             )
             time.sleep(wait)
 
 
+def upsert_child_batch(rows):
+    _upsert_with_retry(UPSERT_CHILD_SQL, rows, "Child")
+
+
+def upsert_parent_batch(rows):
+    _upsert_with_retry(UPSERT_PARENT_SQL, rows, "Parent")
+
+
 def embed_text(text):
-    """
-    Converts a single text into an embedding with ONE API call.
-
-    Args:
-        text (str): the text to embed.
-
-    Returns:
-        list[float]: 1536-dim vector.
-    """
     return embed_batch([text])[0]
 
 
-def run(chunks_route=CHUNKS_ROUTE):
-    """
-    Full pipeline: load chunks -> skip already-ingested ones ->
-    embed + upsert in batches -> report.
+def run(chunks_route=CHUNKS_ROUTE, parents_route=PARENTS_ROUTE):
+    children = load_chunks(chunks_route)
+    parents = load_parents(parents_route)
 
-    A batch that fails after all retries does not stop the run: it is
-    logged and reported at the end, and since it was never upserted,
-    the next execution will retry it automatically.
-    """
-    chunks = load_chunks(chunks_route)
-    existing = get_existing_chunk_ids()
-    pending = [c for c in chunks if c["metadata"]["chunk_id"] not in existing]
+    existing_chunks = get_existing_chunk_ids()
+    existing_parents = get_existing_parent_ids()
+
+    pending_children = [c for c in children if c["metadata"]["chunk_id"] not in existing_chunks]
+    pending_parents = [p for p in parents if p["metadata"]["parent_id"] not in existing_parents]
 
     logger.info(
-        "Loaded %d chunks: %d already ingested, %d pending.",
-        len(chunks), len(chunks) - len(pending), len(pending),
+        "Loaded %d children (%d pending), %d parents (%d pending).",
+        len(children), len(pending_children),
+        len(parents), len(pending_parents),
     )
 
-    failed = []
+    failed_children = []
     try:
-        for i in range(0, len(pending), BATCH_SIZE):
-            batch = pending[i:i + BATCH_SIZE]
+        for i in range(0, len(pending_children), BATCH_SIZE):
+            batch = pending_children[i:i + BATCH_SIZE]
             try:
                 vectors = embed_batch([c["texto"] for c in batch])
                 rows = [
@@ -177,20 +176,38 @@ def run(chunks_route=CHUNKS_ROUTE):
                         c["metadata"]["chunk_id"],
                         c["texto"],
                         Vector(vector),
+                        c["metadata"]["parent_id"],
                     )
                     for c, vector in zip(batch, vectors)
                 ]
-                upsert_batch(rows)
-                logger.info("Progress: %d/%d chunks ingested.", i + len(batch), len(pending))
+                upsert_child_batch(rows)
+                logger.info("Children: %d/%d ingested.", i + len(batch), len(pending_children))
             except Exception as e:
-                failed.extend(c["metadata"]["chunk_id"] for c in batch)
-                logger.error("Batch at index %d failed permanently: %s", i, e)
+                failed_children.extend(c["metadata"]["chunk_id"] for c in batch)
+                logger.error("Child batch at index %d failed permanently: %s", i, e)
+
+        for i in range(0, len(pending_parents), BATCH_SIZE):
+            batch = pending_parents[i:i + BATCH_SIZE]
+            try:
+                rows = [
+                    (
+                        p["metadata"]["aeronave"],
+                        p["metadata"]["fuente"],
+                        p["metadata"]["parent_id"],
+                        p["texto"],
+                    )
+                    for p in batch
+                ]
+                upsert_parent_batch(rows)
+                logger.info("Parents: %d/%d ingested.", i + len(batch), len(pending_parents))
+            except Exception as e:
+                logger.error("Parent batch at index %d failed permanently: %s", i, e)
     finally:
         db_connection.close()
 
-    logger.info("Done. Ingested: %d. Failed: %d.", len(pending) - len(failed), len(failed))
-    if failed:
-        logger.error("Failed chunk_ids (re-run the script to retry them): %s", failed)
+    logger.info("Done. Children ingested: %d. Failed children: %d.", len(pending_children) - len(failed_children), len(failed_children))
+    if failed_children:
+        logger.error("Failed child chunk_ids (re-run to retry): %s", failed_children)
         raise SystemExit(1)
 
 
