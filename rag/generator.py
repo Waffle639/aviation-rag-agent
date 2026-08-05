@@ -2,6 +2,8 @@
 import logging
 import os
 
+from langsmith import traceable
+from langsmith.wrappers import wrap_openai
 from openai import APIError, OpenAI, RateLimitError
 
 from rag.retrival import search_context
@@ -13,11 +15,12 @@ MODEL_NAME = "gpt-5.4-mini"
 
 K_TOP = 5
 
-openai_client = OpenAI(
+openai_client = wrap_openai(OpenAI(
     api_key=os.getenv("OPENAI_API_KEY"),
-)
+))
 
 
+@traceable(run_type="chain", name="rag_pipeline")
 def generate_answer(question):
     """
     Generates an answer to a given question based on the provided context.

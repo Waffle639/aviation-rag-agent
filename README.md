@@ -1,6 +1,6 @@
 # Aviation RAG Agent
 
-A RAG system that answers technical questions about aircraft using official manuals and spec sheets. Built from scratch to understand every layer of the stack: ingestion, chunking, embeddings, vector search and grounded generation.
+A RAG system that answers technical questions about aircraft using official manuals and spec sheets. Built from scratch to understand every layer of the stack: ingestion, chunking, embeddings, vector search and grounded generation. Whith out **LangChain** abstractions, so the design decisions are explicit and the system is fully observable.
 
 
 ## Pipeline

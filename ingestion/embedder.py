@@ -5,6 +5,8 @@ import time
 
 import psycopg2
 from dotenv import load_dotenv
+from langsmith import traceable, tracing_context
+from langsmith.wrappers import wrap_openai
 from openai import APIError, OpenAI, RateLimitError
 from pgvector import Vector
 from pgvector.psycopg2 import register_vector
@@ -58,7 +60,7 @@ if "YOUR-PASSWORD" in os.environ["DATABASE_URL"]:
         "Project Settings -> Database)."
     )
 
-openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+openai_client = wrap_openai(OpenAI(api_key=os.getenv("OPENAI_API_KEY")))
 
 db_connection = psycopg2.connect(os.environ["DATABASE_URL"])
 register_vector(db_connection)
@@ -97,6 +99,9 @@ def get_existing_parent_ids():
         return {row[0] for row in cursor.fetchall()}
 
 
+# wrap_openai no parchea embeddings.create: se traza con @traceable.
+# Un run por lote (100 textos en ingesta, 1 en queries).
+@traceable(run_type="llm", name="openai_embedding")
 def embed_batch(texts):
     for attempt in range(1, MAX_RETRIES + 1):
         try:
@@ -148,6 +153,13 @@ def embed_text(text):
 
 
 def run(chunks_route=CHUNKS_ROUTE, parents_route=PARENTS_ROUTE):
+    # Batch ingestion: tracing disabled, bulk embedding batches aren't
+    # worth the trace quota. Query-path tracing is unaffected.
+    with tracing_context(enabled=False):
+        _run(chunks_route, parents_route)
+
+
+def _run(chunks_route=CHUNKS_ROUTE, parents_route=PARENTS_ROUTE):
     children = load_chunks(chunks_route)
     parents = load_parents(parents_route)
 

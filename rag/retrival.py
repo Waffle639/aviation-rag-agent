@@ -2,6 +2,7 @@ import logging
 import os
 
 from dotenv import load_dotenv
+from langsmith import traceable
 from pgvector import Vector
 from pgvector.psycopg2 import register_vector
 import psycopg2
@@ -17,6 +18,7 @@ db_connection = psycopg2.connect(os.environ["DATABASE_URL"])
 register_vector(db_connection)
 
 
+@traceable(run_type="retriever", name="hybrid_search")
 def search_context(question, aircraft=None, top_k=5):
     query_vector = embed_text(question)
 
