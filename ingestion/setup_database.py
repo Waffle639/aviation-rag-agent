@@ -3,8 +3,8 @@ Database schema setup.
 
 Applies db/schema.sql to the Supabase Postgres database through a direct
 psycopg2 connection (DATABASE_URL). This is the one-time DDL step:
-pgvector extension, the `documents` table, its indexes, and the
-`find_similar` RPC function.
+pgvector extension, the `documents` table, its indexes, the
+`parent_chunks` table, FTS support, and RPC functions.
 
 Guarantees:
   - Idempotent: every statement uses IF NOT EXISTS / CREATE OR REPLACE,
@@ -70,7 +70,7 @@ def main():
                 cursor.execute(statement)
 
             # Verify every schema object actually exists afterwards.
-            # Expected: extension=1, table=1, indexes=4, function=1.
+            # Expected: extension=1, tables=2, idx_docs=6, idx_parents=3, functions=3.
             cursor.execute("""
                 select
                     (select count(*) from pg_extension
@@ -88,23 +88,28 @@ def main():
                      where n.nspname = 'public' and p.proname = 'find_similar'),
                     (select count(*) from pg_proc p
                      join pg_namespace n on n.oid = p.pronamespace
-                     where n.nspname = 'public' and p.proname = 'find_similar_parents')
+                     where n.nspname = 'public' and p.proname = 'find_similar_parents'),
+                    (select count(*) from pg_proc p
+                     join pg_namespace n on n.oid = p.pronamespace
+                     where n.nspname = 'public' and p.proname = 'find_similar_parents_hybrid')
             """)
-            extension, table_docs, table_parents, idx_docs, idx_parents, func_similar, func_similar_parents = cursor.fetchone()
+            extension, table_docs, table_parents, idx_docs, idx_parents, func_similar, func_similar_parents, func_similar_parents_hybrid = cursor.fetchone()
     finally:
         connection.close()
 
     print(f"extension vector:             {'OK' if extension == 1 else 'MISSING'}")
     print(f"table documents:              {'OK' if table_docs == 1 else 'MISSING'}")
     print(f"table parent_chunks:          {'OK' if table_parents == 1 else 'MISSING'}")
-    print(f"indexes documents (exp 5):    {idx_docs}")
-    print(f"indexes parent_chunks (exp 2): {idx_parents}")
+    print(f"indexes documents (exp 6):    {idx_docs}")
+    print(f"indexes parent_chunks (exp 3): {idx_parents}")
     print(f"function find_similar:        {'OK' if func_similar == 1 else 'MISSING'}")
     print(f"function find_similar_parents:{'OK' if func_similar_parents == 1 else 'MISSING'}")
+    print(f"function find_similar_parents_hybrid:{'OK' if func_similar_parents_hybrid == 1 else 'MISSING'}")
 
     if not (extension == 1 and table_docs == 1 and table_parents == 1
-            and idx_docs == 5 and idx_parents == 2
-            and func_similar == 1 and func_similar_parents == 1):
+            and idx_docs == 6 and idx_parents == 3
+            and func_similar == 1 and func_similar_parents == 1
+            and func_similar_parents_hybrid == 1):
         sys.exit("ERROR: schema verification failed. Check the output above.")
 
     print("Schema applied and verified successfully.")

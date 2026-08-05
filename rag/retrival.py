@@ -1,3 +1,4 @@
+import logging
 import os
 
 from dotenv import load_dotenv
@@ -10,6 +11,8 @@ from ingestion.embedder import embed_text
 
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
 db_connection = psycopg2.connect(os.environ["DATABASE_URL"])
 register_vector(db_connection)
 
@@ -19,16 +22,14 @@ def search_context(question, aircraft=None, top_k=5):
 
     with db_connection.cursor(cursor_factory=RealDictCursor) as cursor:
         cursor.execute(
-            "SELECT * FROM find_similar_parents(%s, %s, %s)",
-            (Vector(query_vector), aircraft, top_k),
+            "SELECT * FROM find_similar_parents_hybrid(%s, %s, %s, %s)",
+            (Vector(query_vector), question, aircraft, top_k),
         )
         results = cursor.fetchall()
 
-        if not results:
-            cursor.execute(
-                "SELECT * FROM find_similar(%s, %s, %s)",
-                (Vector(query_vector), aircraft, top_k),
-            )
-            results = cursor.fetchall()
-
-        return results
+    logger.info(
+        "Retrieved %d parent chunks: %s",
+        len(results),
+        [(r["chunk_id"], round(r["similarity"], 4)) for r in results],
+    )
+    return results

@@ -58,12 +58,14 @@ def generate_answer(question):
 
         Answer:
     """
-    
-    
-    logger.info("--- GENERATION REQUEST ---")
-    logger.info("Model: %s", MODEL_NAME)
-    logger.info("Instructions: %s", instructions)
-    logger.info("Input: %s", input)
+
+    # INFO logs references, not payloads: the retrieved chunk_ids (with
+    # scores) are already logged by rag.retrival, and the full prompt is
+    # reproducible from them. Payloads stay at DEBUG, off by default.
+    logger.info(
+        "Generating answer: model=%s, chunks=%d", MODEL_NAME, len(chunks_context)
+    )
+    logger.debug("Full prompt:\n%s", input)
 
     try:
         response = openai_client.responses.create(
@@ -78,8 +80,6 @@ def generate_answer(question):
         )
         raise
 
-    logger.info("--- GENERATION RESPONSE ---")
-    logger.info("Output text: %s", response.output_text)
-    logger.info("--- END GENERATION ---")
+    logger.debug("Raw response:\n%s", response.output_text)
 
     return response.output_text

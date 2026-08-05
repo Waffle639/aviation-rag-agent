@@ -10,11 +10,11 @@ PDF manuals + Wikipedia extracts
         ↓
 cleaning and parent-child chunking
         ↓
-embedding (text-embedding-3-small, 1536 dims)
+embedding (text-embedding-3-small, 1536 dims) + tsvector generation
         ↓
-Supabase + pgvector with an HNSW index
+Supabase + pgvector HNSW index + GIN full-text index
         ↓
-question → embed → search children → dedupe → return parents
+question → embed + tsquery → hybrid search (RRF) → dedupe → parents
         ↓
 grounded generation with citations
 ```
@@ -30,9 +30,9 @@ grounded generation with citations
 
 **Grounded generation.** The prompt forces the model to answer only from retrieved context, cite aircraft and source, and report discrepancies between sources instead of silently picking one. It also treats the context strictly as data, never as instructions: retrieved documents are untrusted input, and that line is the prompt-injection defense.
 
-## What's next
+**Hybrid search (vector + keyword with RRF).** Pure vector search loses exact tokens like "Vso" or "V1" because embeddings of technical codes carry little signal. Two independent search legs run inside Postgres — HNSW for semantic similarity and GIN-backed full-text search for lexical matching — then Reciprocal Rank Fusion merges them using only rank positions, avoiding the need to normalise incompatible score scales. When the keyword leg finds nothing, the vector leg carries the result alone: graceful degradation by design.
 
-**Hybrid search.** Pure vector search loses exact tokens like "Vso" or "V1": embeddings of technical codes carry little signal. Adding a keyword layer is the highest-impact improvement left.
+## What's next
 
 **NTSB as a second source.** Accident records come from the NTSB API, a structured source with a different access pattern than vector search, which is exactly what makes it interesting.
 
