@@ -76,11 +76,13 @@ def verify_schema():
                          join pg_namespace n on n.oid = p.pronamespace
                          where n.nspname = 'public' and p.proname = 'find_similar_parents_hybrid')
                 """)
+                row = cursor.fetchone()
+                assert row is not None, "Schema verification query returned no rows"
                 (
                     extension, table_docs, table_parents,
                     idx_docs, idx_parents, func_similar,
                     func_similar_parents, func_similar_parents_hybrid,
-                ) = cursor.fetchone()
+                ) = row
         finally:
             connection.close()
 

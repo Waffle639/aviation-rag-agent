@@ -122,6 +122,7 @@ def embed_batch(texts):
                 e, attempt, MAX_RETRIES, wait,
             )
             time.sleep(wait)
+    raise RuntimeError("embed_batch: unexpected end of retry loop")
 
 
 def _upsert_with_retry(sql, rows, label):

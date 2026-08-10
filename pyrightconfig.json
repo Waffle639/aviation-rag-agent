@@ -1,0 +1,7 @@
+{
+    "venv": ".venv",
+    "pythonVersion": "3.12",
+    "typeCheckingMode": "basic",
+    "include": ["ingestion", "rag", "configure.py", "tests"],
+    "exclude": ["__pycache__", ".venv", "notebooks", "data", "db", "models", "logs"]
+}

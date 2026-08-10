@@ -123,7 +123,7 @@ def import_fresh():
             for name in to_pop:
                 sys.modules.pop(name, None)
             try:
-                mods = {
+                mods: dict[str, object] = {
                     name: importlib.import_module(name) for name in module_names
                 }
                 mods["__patches__"] = SimpleNamespace(

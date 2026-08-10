@@ -95,7 +95,8 @@ def main():
 
     with db_connection.cursor(cursor_factory=RealDictCursor) as cursor:
         cursor.execute(TSQUERY_SQL, (question,))
-        tsquery = cursor.fetchone()["q"]
+        tsquery_row = cursor.fetchone()
+        tsquery = tsquery_row["q"] if tsquery_row else None
 
         cursor.execute(VEC_SQL, (Vector(query_vector),) * 3 + (CANDIDATES,))
         vec_ranks = best_rank_per_parent(cursor.fetchall())
