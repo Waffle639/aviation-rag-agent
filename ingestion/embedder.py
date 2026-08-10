@@ -62,7 +62,10 @@ if "YOUR-PASSWORD" in os.environ["DATABASE_URL"]:
 
 openai_client = wrap_openai(OpenAI(api_key=os.getenv("OPENAI_API_KEY")))
 
-db_connection = psycopg2.connect(os.environ["DATABASE_URL"])
+db_connection = psycopg2.connect(
+    os.environ["DATABASE_URL"],
+    options="-c statement_timeout=10000",
+)
 register_vector(db_connection)
 
 
@@ -152,9 +155,65 @@ def embed_text(text):
     return embed_batch([text])[0]
 
 
+def _scan_ingestion_chunks(children):
+    try:
+        from rag.guardrails import RAG_SECURITY
+    except ImportError:
+        logger.info("guardrails module not importable — skipping ingestion scan.")
+        return [], []
+
+    if not RAG_SECURITY:
+        logger.info("RAG_SECURITY is disabled — skipping ingestion scan.")
+        return [], []
+
+    try:
+        from rag.guardrails import _get_detector
+        detector = _get_detector()
+        if detector is None:
+            logger.info("Prompt Guard detector not available — skipping ingestion scan.")
+            return [], []
+    except Exception as e:
+        logger.info("Prompt Guard not available (%s) — skipping ingestion scan.", e)
+        return [], []
+
+    suspicious = []
+    failed_scan = []
+    total = len(children)
+    for i, chunk in enumerate(children, 1):
+        text = chunk.get("texto", "")
+        chunk_id = chunk.get("metadata", {}).get("chunk_id", "?")
+        try:
+            label, score = detector.classify(text)
+            if label == "MALICIOUS":
+                suspicious.append((chunk_id, score, text[:120]))
+        except Exception as e:
+            failed_scan.append((chunk_id, str(e)))
+        if i % 50 == 0 or i == total:
+            logger.info("Scan progress: %d/%d chunks.", i, total)
+
+    if suspicious:
+        logger.warning(
+            "PROMPT GUARD: %d chunk(s) flagged as MALICIOUS (human review needed):",
+            len(suspicious),
+        )
+        for chunk_id, score, preview in suspicious:
+            logger.warning("  %s (score=%.4f): %s", chunk_id, score, preview)
+
+    if failed_scan:
+        logger.error(
+            "Scan errors on %d chunk(s): %s",
+            len(failed_scan),
+            [cid for cid, _ in failed_scan],
+        )
+
+    logger.info(
+        "Ingestion scan complete: %d scanned, %d suspicious, %d errors.",
+        total, len(suspicious), len(failed_scan),
+    )
+    return suspicious, failed_scan
+
+
 def run(chunks_route=CHUNKS_ROUTE, parents_route=PARENTS_ROUTE):
-    # Batch ingestion: tracing disabled, bulk embedding batches aren't
-    # worth the trace quota. Query-path tracing is unaffected.
     with tracing_context(enabled=False):
         _run(chunks_route, parents_route)
 
@@ -174,6 +233,8 @@ def _run(chunks_route=CHUNKS_ROUTE, parents_route=PARENTS_ROUTE):
         len(children), len(pending_children),
         len(parents), len(pending_parents),
     )
+
+    _scan_ingestion_chunks(children)
 
     failed_children = []
     try:

@@ -14,7 +14,10 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-db_connection = psycopg2.connect(os.environ["DATABASE_URL"])
+db_connection = psycopg2.connect(
+    os.environ["DATABASE_URL"],
+    options="-c statement_timeout=10000",
+)
 register_vector(db_connection)
 
 

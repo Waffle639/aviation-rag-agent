@@ -18,7 +18,8 @@ middle statements can be silently skipped (observed in practice: the
 CREATE TABLE vanished while CREATE EXTENSION and CREATE FUNCTION applied).
 
 Usage:
-    python ingestion/setup_database.py
+    python -m ingestion.setup_database       # standalone
+    python configure.py --db                 # via unified setup
 """
 
 import os
@@ -27,29 +28,90 @@ import sys
 import psycopg2
 from dotenv import load_dotenv
 
-SCHEMA_PATH = "db/schema.sql"
+SCHEMA_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "db", "schema.sql",
+)
 
 
 def load_statements(path):
-    """
-    Reads the schema file and splits it into individual statements.
-
-    Full-line comments are stripped BEFORE splitting, so ";" characters
-    inside comments cannot break the split. Still relies on schema.sql
-    not using ";" inside function bodies (see the warning at the top of
-    that file).
-    """
     with open(path, encoding="utf-8") as f:
         lines = [line for line in f if not line.strip().startswith("--")]
     sql = "".join(lines)
     return [s.strip() for s in sql.split(";") if s.strip()]
 
 
+def verify_schema():
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url or "YOUR-PASSWORD" in database_url:
+        return False, (
+            "DATABASE_URL is missing or still contains the placeholder. "
+            "Set it in .env (Supabase Dashboard -> Project Settings -> Database)."
+        )
+
+    try:
+        connection = psycopg2.connect(database_url, options="-c statement_timeout=10000")
+        connection.autocommit = True
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    select
+                        (select count(*) from pg_extension
+                         where extname = 'vector'),
+                        (select count(*) from information_schema.tables
+                         where table_schema = 'public' and table_name = 'documents'),
+                        (select count(*) from information_schema.tables
+                         where table_schema = 'public' and table_name = 'parent_chunks'),
+                        (select count(*) from pg_indexes
+                         where tablename = 'documents'),
+                        (select count(*) from pg_indexes
+                         where tablename = 'parent_chunks'),
+                        (select count(*) from pg_proc p
+                         join pg_namespace n on n.oid = p.pronamespace
+                         where n.nspname = 'public' and p.proname = 'find_similar'),
+                        (select count(*) from pg_proc p
+                         join pg_namespace n on n.oid = p.pronamespace
+                         where n.nspname = 'public' and p.proname = 'find_similar_parents'),
+                        (select count(*) from pg_proc p
+                         join pg_namespace n on n.oid = p.pronamespace
+                         where n.nspname = 'public' and p.proname = 'find_similar_parents_hybrid')
+                """)
+                (
+                    extension, table_docs, table_parents,
+                    idx_docs, idx_parents, func_similar,
+                    func_similar_parents, func_similar_parents_hybrid,
+                ) = cursor.fetchone()
+        finally:
+            connection.close()
+
+        ok = (
+            extension == 1
+            and table_docs == 1
+            and table_parents == 1
+            and idx_docs == 6
+            and idx_parents == 3
+            and func_similar == 1
+            and func_similar_parents == 1
+            and func_similar_parents_hybrid == 1
+        )
+        if ok:
+            return True, "Schema verified."
+        return False, (
+            f"Schema incomplete: extension={extension}, "
+            f"documents={table_docs}, parent_chunks={table_parents}, "
+            f"idx_docs={idx_docs}, idx_parents={idx_parents}, "
+            f"find_similar={func_similar}, "
+            f"find_similar_parents={func_similar_parents}, "
+            f"find_similar_parents_hybrid={func_similar_parents_hybrid}"
+        )
+    except Exception as e:
+        return False, f"Schema check failed: {e}"
+
+
 def main():
     load_dotenv()
     database_url = os.getenv("DATABASE_URL")
 
-    # Fail fast with a clear message instead of a cryptic auth error
     if not database_url or "YOUR-PASSWORD" in database_url:
         sys.exit(
             "ERROR: DATABASE_URL is missing or still contains the "
@@ -68,48 +130,12 @@ def main():
         with connection.cursor() as cursor:
             for statement in statements:
                 cursor.execute(statement)
-
-            # Verify every schema object actually exists afterwards.
-            # Expected: extension=1, tables=2, idx_docs=6, idx_parents=3, functions=3.
-            cursor.execute("""
-                select
-                    (select count(*) from pg_extension
-                     where extname = 'vector'),
-                    (select count(*) from information_schema.tables
-                     where table_schema = 'public' and table_name = 'documents'),
-                    (select count(*) from information_schema.tables
-                     where table_schema = 'public' and table_name = 'parent_chunks'),
-                    (select count(*) from pg_indexes
-                     where tablename = 'documents'),
-                    (select count(*) from pg_indexes
-                     where tablename = 'parent_chunks'),
-                    (select count(*) from pg_proc p
-                     join pg_namespace n on n.oid = p.pronamespace
-                     where n.nspname = 'public' and p.proname = 'find_similar'),
-                    (select count(*) from pg_proc p
-                     join pg_namespace n on n.oid = p.pronamespace
-                     where n.nspname = 'public' and p.proname = 'find_similar_parents'),
-                    (select count(*) from pg_proc p
-                     join pg_namespace n on n.oid = p.pronamespace
-                     where n.nspname = 'public' and p.proname = 'find_similar_parents_hybrid')
-            """)
-            extension, table_docs, table_parents, idx_docs, idx_parents, func_similar, func_similar_parents, func_similar_parents_hybrid = cursor.fetchone()
     finally:
         connection.close()
 
-    print(f"extension vector:             {'OK' if extension == 1 else 'MISSING'}")
-    print(f"table documents:              {'OK' if table_docs == 1 else 'MISSING'}")
-    print(f"table parent_chunks:          {'OK' if table_parents == 1 else 'MISSING'}")
-    print(f"indexes documents (exp 6):    {idx_docs}")
-    print(f"indexes parent_chunks (exp 3): {idx_parents}")
-    print(f"function find_similar:        {'OK' if func_similar == 1 else 'MISSING'}")
-    print(f"function find_similar_parents:{'OK' if func_similar_parents == 1 else 'MISSING'}")
-    print(f"function find_similar_parents_hybrid:{'OK' if func_similar_parents_hybrid == 1 else 'MISSING'}")
-
-    if not (extension == 1 and table_docs == 1 and table_parents == 1
-            and idx_docs == 6 and idx_parents == 3
-            and func_similar == 1 and func_similar_parents == 1
-            and func_similar_parents_hybrid == 1):
+    ok, msg = verify_schema()
+    print(msg)
+    if not ok:
         sys.exit("ERROR: schema verification failed. Check the output above.")
 
     print("Schema applied and verified successfully.")

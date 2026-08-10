@@ -23,6 +23,7 @@ build/
 # Jupyter, si usas notebooks para exploración
 .ipynb_checkpoints/
 *.ipynb
+!notebooks/*.ipynb
 
 # IDEs
 .vscode/
@@ -41,3 +42,4 @@ logs/
 .cache/
 *.pkl
 *.faiss
+models/

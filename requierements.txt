@@ -1,8 +1,0 @@
-requests
-pymupdf
-openai
-python-dotenv
-psycopg2-binary
-pgvector
-supabase   
-langsmith 

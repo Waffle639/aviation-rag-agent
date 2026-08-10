@@ -1,7 +1,6 @@
 # Aviation RAG Agent
 
-A RAG system that answers technical questions about aircraft using official manuals and spec sheets. Built from scratch to understand every layer of the stack: ingestion, chunking, embeddings, vector search and grounded generation. Whith out **LangChain** abstractions, so the design decisions are explicit and the system is fully observable.
-
+A RAG system that answers technical questions about aircraft using official manuals and spec sheets. Built from scratch — no LangChain abstractions — so every layer of the stack (ingestion, chunking, embeddings, vector search, grounded generation) is an explicit, observable decision.
 
 ## Pipeline
 
@@ -10,35 +9,51 @@ PDF manuals + Wikipedia extracts
         ↓
 cleaning and parent-child chunking
         ↓
-embedding (text-embedding-3-small, 1536 dims) + tsvector generation
+embeddings + tsvector generation
         ↓
-Supabase + pgvector HNSW index + GIN full-text index
+Supabase + pgvector (HNSW) + GIN full-text index
         ↓
-question → embed + tsquery → hybrid search (RRF) → dedupe → parents
+hybrid search (vector + keyword, RRF fusion) → dedupe → parents
         ↓
-grounded generation with citations
+grounded generation with citations + guardrails
 ```
+
+## Setup
+
+```bash
+python configure.py  # guided setup: database, local security model, smoke test
+```
+
+One command handles everything. Configuration lives in `.env` (see `.env.example`).
 
 ## Design decisions
 
-**Parent-child chunking.** Children (~500 chars, 100 overlap) get embedded for precise matching; parents (~2000 chars, paragraph-aligned) are what the model actually sees. Search small, return big: a 500-char window locates the right spot, and the 2000-char parent gives the model enough context that the answer doesn't hinge on a sentence cut in half.
+**Parent-child chunking.** Small children (~500 chars) are embedded for precise matching; their paragraph-aligned parents (~2000 chars) are what the model actually sees. Search small, return big.
 
-**HNSW over IVFFlat.** Better recall and no training step. Also a practical detail: IVFFlat indexes built on empty tables perform poorly until reindexed, and HNSW doesn't have that problem, which matters when the schema is created before the data arrives.
+**Hybrid search (vector + keyword, RRF).** Pure vector search loses exact tokens like "Vso" or "V1". HNSW handles semantic similarity, a GIN full-text index handles lexical matching, and Reciprocal Rank Fusion merges both by rank position — no score normalisation needed. The RRF logic lives as a PostgreSQL function (`find_similar_parents_hybrid`), so the fusion happens inside the database, not in application code.
 
+**HNSW over IVFFlat.** Better recall, no training step — and no degraded index while the table is still empty.
 
-**Idempotent ingestion.** Every chunk gets a stable ID and ingestion is an upsert that skips what already exists, so re-running the pipeline never duplicates or re-embeds. API failures retry with exponential backoff, and failed batches are reported by ID so they can be retried selectively.
+**Idempotent ingestion.** Stable chunk IDs and upserts: re-running the pipeline never duplicates or re-embeds. API failures retry with backoff; failed batches are reported by ID for selective retries.
 
-**Grounded generation.** The prompt forces the model to answer only from retrieved context, cite aircraft and source, and report discrepancies between sources instead of silently picking one. It also treats the context strictly as data, never as instructions: retrieved documents are untrusted input, and that line is the prompt-injection defense.
+**Grounded generation.** The model answers only from retrieved context, cites aircraft and source, reports discrepancies between sources instead of silently picking one — and says "I don't have that information" when the data isn't there.
 
-**Hybrid search (vector + keyword with RRF).** Pure vector search loses exact tokens like "Vso" or "V1" because embeddings of technical codes carry little signal. Two independent search legs run inside Postgres — HNSW for semantic similarity and GIN-backed full-text search for lexical matching — then Reciprocal Rank Fusion merges them using only rank positions, avoiding the need to normalise incompatible score scales. When the keyword leg finds nothing, the vector leg carries the result alone: graceful degradation by design.
+## Security
+
+- **Local prompt-injection detector.** Meta's Prompt Guard 2 runs on CPU — questions never leave the machine, and its ~100ms is invisible next to generation. The same classifier scans user questions at query time and every chunk at ingestion: defense at the two points where untrusted text enters the system.
+- **Fine-tuned on aviation data.** The base model knows generic injection patterns. A fine-tuned variant (`models/prompt-guard-aviation/`) tightens the decision boundary for this domain — see `notebooks/finetune_prompt_guard.ipynb`.
+- **Defense in depth.** OpenAI Moderation screens both input and output, the prompt treats retrieved context strictly as data (never instructions), and answers are scanned for system-prompt leaks.
+- **Fail-closed, human in the loop.** Guardrails gate behind a single switch (`RAG_SECURITY`, on by default); at query time a missing detector raises instead of silently degrading. Flagged ingestion chunks are logged for human review, never auto-deleted — aviation documents produce false positives.
+
+## Tests
+
+Unit, integration and e2e tests covering chunking logic, guardrail behaviour and the full query pipeline. Run with `pytest`.
 
 ## What's next
 
-**NTSB as a second source.** Accident records come from the NTSB API, a structured source with a different access pattern than vector search, which is exactly what makes it interesting.
-
-**Routing agent (LangGraph).** The question should decide the path: manuals, accidents, or both. LangGraph over CrewAI for the same reason as everything in this project: an explicit graph instead of reasoning hidden behind abstractions.
-
-**Evaluation with RAGAS.** Measure faithfulness and context recall to know, with numbers, whether failures come from retrieval or generation. Without this, "it works" is just an opinion.
+- **NTSB as a second source** — accident records via a structured API, a different access pattern than vector search.
+- **Routing agent (LangGraph)** — the question decides the path: manuals, accidents, or both. Explicit graph, no hidden abstractions.
+- **Evaluation with RAGAS** — faithfulness and context recall, to attribute failures to retrieval or generation with numbers, not opinions.
 
 ## What "done" looks like
 

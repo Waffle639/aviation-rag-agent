@@ -56,9 +56,10 @@ def build_child_chunks(parent_text):
     return chunks
 
 
-def save_chunks_to_files(parents, children_map, aircraft, font):
-    parent_dir = f"data/processed/parents/{aircraft}"
-    child_dir = f"data/processed/chunks/{aircraft}"
+def save_chunks_to_files(parents, children_map, aircraft, font,
+                        output_root="data/processed"):
+    parent_dir = os.path.join(output_root, "parents", aircraft)
+    child_dir = os.path.join(output_root, "chunks", aircraft)
     os.makedirs(parent_dir, exist_ok=True)
     os.makedirs(child_dir, exist_ok=True)
 
@@ -94,6 +95,22 @@ def save_chunks_to_files(parents, children_map, aircraft, font):
             child_counter += 1
 
 
+def process_document(txt_path, aircraft, font, output_root="data/processed"):
+    """Chunk a single txt file into parents + children and write them to disk.
+
+    Returns (parents, children_map) so callers can inspect the result.
+    """
+    with open(txt_path, "r", encoding="utf-8") as file:
+        raw_text = file.read()
+
+    text = clean_text(raw_text)
+    paragraphs = split_paragraphs(text)
+    parents = group_paragraphs_into_parents(paragraphs, target_size=PARENT_SIZE)
+    children_map = [build_child_chunks(p) for p in parents]
+    save_chunks_to_files(parents, children_map, aircraft, font, output_root=output_root)
+    return parents, children_map
+
+
 if __name__ == "__main__":
     wiki_route = "data/raw/wiki"
     pdf_route = "data/raw/pdf_to_txt"
@@ -110,13 +127,5 @@ if __name__ == "__main__":
         doc_font = "wiki" if doc in wiki_docs else "pdf" if doc in pdf_docs else "unknown"
         txt_path = os.path.join(wiki_route if doc_font == "wiki" else pdf_route, doc)
 
-        with open(txt_path, "r", encoding="utf-8") as file:
-            raw_text = file.read()
-
-        text = clean_text(raw_text)
-        paragraphs = split_paragraphs(text)
-        parents = group_paragraphs_into_parents(paragraphs, target_size=PARENT_SIZE)
-        children_map = [build_child_chunks(p) for p in parents]
-        save_chunks_to_files(parents, children_map, aircraft, doc_font)
-
+        parents, children_map = process_document(txt_path, aircraft, doc_font)
         print(f"{aircraft}: {len(parents)} parents, {sum(len(c) for c in children_map)} children")
