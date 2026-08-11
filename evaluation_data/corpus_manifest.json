@@ -1,0 +1,237 @@
+{
+  "manifest_version": "v1",
+  "documents": [
+    {
+      "document_id": "614c93091d6bc1a2",
+      "path": "data/raw/pdf_to_txt/747-400_Rev_F.txt",
+      "source_type": "pdf_text",
+      "aircraft": "Boeing 747",
+      "variant": "747-400",
+      "sha256": "e3848702395822e6a0a7483838a2b98830262d84ed6a66323ee556365a435a72",
+      "size_bytes": 182730,
+      "line_count": 8694,
+      "is_empty": false
+    },
+    {
+      "document_id": "b0132e331549708b",
+      "path": "data/raw/pdf_to_txt/AC_A320_0624.txt",
+      "source_type": "pdf_text",
+      "aircraft": "Airbus A320",
+      "variant": "A320",
+      "sha256": "060d84a4d8d1458dbd1836e693da45832fe57b8c4a24455865d76707ffbbb0dd",
+      "size_bytes": 361126,
+      "line_count": 27559,
+      "is_empty": false
+    },
+    {
+      "document_id": "0c49df4217a0a457",
+      "path": "data/raw/pdf_to_txt/ac_a330_jul2023_0.txt",
+      "source_type": "pdf_text",
+      "aircraft": "Airbus A330",
+      "variant": "A330",
+      "sha256": "647c036105091356072ebac7b30b82c7fab7c5f962ce27333efde937de7e3dfc",
+      "size_bytes": 541813,
+      "line_count": 37603,
+      "is_empty": false
+    },
+    {
+      "document_id": "e470f1e3b9a4845f",
+      "path": "data/raw/pdf_to_txt/IF12945.7.txt",
+      "source_type": "pdf_text",
+      "aircraft": "U.S. Strategic Bombers",
+      "variant": "B-52/B-1B/B-2/B-21",
+      "sha256": "3a755654f4fef90d90258e06e74b544b97565cddd22070947d3c4a89d6dec77b",
+      "size_bytes": 13034,
+      "line_count": 236,
+      "is_empty": false
+    },
+    {
+      "document_id": "2aa41026a0ad2790",
+      "path": "data/raw/wiki/Airbus_A320_family.txt",
+      "source_type": "wikipedia",
+      "aircraft": "Airbus A320 family",
+      "variant": "family_or_base_model",
+      "sha256": "243697bb3dccb58af157e97a5f44e227517cd014f0017fe2c59cf70ed23db69c",
+      "size_bytes": 48115,
+      "line_count": 306,
+      "is_empty": false
+    },
+    {
+      "document_id": "32c0e25274f78e18",
+      "path": "data/raw/wiki/Airbus_A330.txt",
+      "source_type": "wikipedia",
+      "aircraft": "Airbus A330",
+      "variant": "family_or_base_model",
+      "sha256": "73df9b870aaaf26ce7cdbb539ebc34a6abb0757f215441e28e279e4b698cf296",
+      "size_bytes": 52727,
+      "line_count": 306,
+      "is_empty": false
+    },
+    {
+      "document_id": "8379b78c476be73b",
+      "path": "data/raw/wiki/Boeing_747-8.txt",
+      "source_type": "wikipedia",
+      "aircraft": "Boeing 747-8",
+      "variant": "family_or_base_model",
+      "sha256": "b76f359a7d447cc7d4c46ddfbea8df7ddfc8abbcc159df1e164c3a6873f70cae",
+      "size_bytes": 33914,
+      "line_count": 197,
+      "is_empty": false
+    },
+    {
+      "document_id": "f3d8f5418129b47f",
+      "path": "data/raw/wiki/Boeing_747.txt",
+      "source_type": "wikipedia",
+      "aircraft": "Boeing 747",
+      "variant": "family_or_base_model",
+      "sha256": "526929e9710353f9d301e4b9bf35379cd7c2b6f6d89cfda98ef88c548ab44fe7",
+      "size_bytes": 88173,
+      "line_count": 395,
+      "is_empty": false
+    },
+    {
+      "document_id": "8958ef26f99674ec",
+      "path": "data/raw/wiki/Chengdu_J-20.txt",
+      "source_type": "wikipedia",
+      "aircraft": "Chengdu J-20",
+      "variant": "family_or_base_model",
+      "sha256": "3be48e4c3a8eea97abbf2a81da73047d1801e3e3c2bbaf0a987cf21126b5a0bf",
+      "size_bytes": 50541,
+      "line_count": 256,
+      "is_empty": false
+    },
+    {
+      "document_id": "e4d0532c25999e3b",
+      "path": "data/raw/wiki/Eurofighter_Typhoon.txt",
+      "source_type": "wikipedia",
+      "aircraft": "Eurofighter Typhoon",
+      "variant": "family_or_base_model",
+      "sha256": "5605bbb0ff2d1e49f257e30efc06b85776da34d8c99fd4f7db600d55354903e9",
+      "size_bytes": 88978,
+      "line_count": 557,
+      "is_empty": false
+    },
+    {
+      "document_id": "9009b601c039f982",
+      "path": "data/raw/wiki/General_Dynamics_F-16_Fighting_Falcon.txt",
+      "source_type": "wikipedia",
+      "aircraft": "General Dynamics F-16 Fighting Falcon",
+      "variant": "family_or_base_model",
+      "sha256": "69ab34a62f46b85a00495dfae47fff419ec10eb9785b62898a94b891a5f978f0",
+      "size_bytes": 81681,
+      "line_count": 422,
+      "is_empty": false
+    },
+    {
+      "document_id": "c75c80e52557a791",
+      "path": "data/raw/wiki/Lockheed_Martin_F-22_Raptor.txt",
+      "source_type": "wikipedia",
+      "aircraft": "Lockheed Martin F-22 Raptor",
+      "variant": "family_or_base_model",
+      "sha256": "3446a14e645b4f09682ef03f9b6a2f060690242d6773ae5bbffbf23fdfa90670",
+      "size_bytes": 71400,
+      "line_count": 309,
+      "is_empty": false
+    },
+    {
+      "document_id": "889e6e17383bb17e",
+      "path": "data/raw/wiki/Lockheed_Martin_F-35_Lightning_II.txt",
+      "source_type": "wikipedia",
+      "aircraft": "Lockheed Martin F-35 Lightning II",
+      "variant": "family_or_base_model",
+      "sha256": "edd6108166517863527e8899071dfa33d4dbda619270a01adde81ef9fe264d9f",
+      "size_bytes": 99919,
+      "line_count": 472,
+      "is_empty": false
+    },
+    {
+      "document_id": "a809c6fedc59e92d",
+      "path": "data/raw/wiki/McDonnell_Douglas_F-15_Eagle.txt",
+      "source_type": "wikipedia",
+      "aircraft": "McDonnell Douglas F-15 Eagle",
+      "variant": "family_or_base_model",
+      "sha256": "ad9e00b7a005d76d85f1c21d8960d68b238da2efad7ea37fe9b8f80c0f849811",
+      "size_bytes": 67671,
+      "line_count": 487,
+      "is_empty": false
+    },
+    {
+      "document_id": "ab3d834f00ab7fc0",
+      "path": "data/raw/wiki/McDonnell_Douglas_F_A-18_Hornet.txt",
+      "source_type": "wikipedia",
+      "aircraft": "McDonnell Douglas F A-18 Hornet",
+      "variant": "family_or_base_model",
+      "sha256": "681acf6ac019464da874dd82fb823d6b2af4cab7ee91d40f133ba5d61224d851",
+      "size_bytes": 68590,
+      "line_count": 544,
+      "is_empty": false
+    },
+    {
+      "document_id": "d0dc1f5ab42bba95",
+      "path": "data/raw/wiki/Mikoyan_MiG-29.txt",
+      "source_type": "wikipedia",
+      "aircraft": "Mikoyan MiG-29",
+      "variant": "family_or_base_model",
+      "sha256": "467770b7e589f4df6c33efaf57309676091fde9ed559250b8e788b8a305c5a5c",
+      "size_bytes": 104835,
+      "line_count": 712,
+      "is_empty": false
+    },
+    {
+      "document_id": "d250b2610a63f274",
+      "path": "data/raw/wiki/Northrop_Grumman_B-2_Spirit.txt",
+      "source_type": "wikipedia",
+      "aircraft": "Northrop Grumman B-2 Spirit",
+      "variant": "family_or_base_model",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0,
+      "line_count": 0,
+      "is_empty": true
+    },
+    {
+      "document_id": "48feec1e6b895ee0",
+      "path": "data/raw/wiki/Saab_35_Draken.txt",
+      "source_type": "wikipedia",
+      "aircraft": "Saab 35 Draken",
+      "variant": "family_or_base_model",
+      "sha256": "9cca9516722a49f0ab6f625283745ac4febd9cac24729cd66b021a29bd10fbe1",
+      "size_bytes": 44281,
+      "line_count": 312,
+      "is_empty": false
+    },
+    {
+      "document_id": "ef22298ab0c58a20",
+      "path": "data/raw/wiki/Sukhoi_Su-27.txt",
+      "source_type": "wikipedia",
+      "aircraft": "Sukhoi Su-27",
+      "variant": "family_or_base_model",
+      "sha256": "0a03ef6bd9f92f4476613944bdc4f3b7ad8b3e0baf1b23de83dfb92a99432981",
+      "size_bytes": 50398,
+      "line_count": 397,
+      "is_empty": false
+    },
+    {
+      "document_id": "cd46168e61cc19f8",
+      "path": "data/raw/wiki/Sukhoi_Su-47.txt",
+      "source_type": "wikipedia",
+      "aircraft": "Sukhoi Su-47",
+      "variant": "family_or_base_model",
+      "sha256": "fe0246723670201b1e9e4ae8254dbfda0579a5ece6aaa8f9e3f00c63063fb970",
+      "size_bytes": 6384,
+      "line_count": 91,
+      "is_empty": false
+    },
+    {
+      "document_id": "4121dfc92e953ee2",
+      "path": "data/raw/wiki/Sukhoi_Su-57.txt",
+      "source_type": "wikipedia",
+      "aircraft": "Sukhoi Su-57",
+      "variant": "family_or_base_model",
+      "sha256": "4b6f219ed8f6d5e82b29a8b7fe11afa2ee0a966cd929fe30eca2cb3ceacdc34c",
+      "size_bytes": 63639,
+      "line_count": 292,
+      "is_empty": false
+    }
+  ],
+  "manifest_sha256": "7e11f5a7be737823675d5d6dd7a024eb4c5e775694e141c4a2e7393e9d09dd15"
+}

@@ -49,6 +49,43 @@ One command handles everything. Configuration lives in `.env` (see `.env.example
 
 Unit, integration and e2e tests covering chunking logic, guardrail behaviour and the full query pipeline. Run with `pytest`.
 
+## Evaluation
+
+The evaluation registry lives in the separate `evaluation` PostgreSQL schema. It
+is intentionally not part of the RAG corpus tables: golden cases are expected
+answers and must never be retrieved as context.
+
+Create a local corpus manifest and validate the initial English dataset without
+database credentials:
+
+```bash
+python -m evaluation.manifest
+python -m evaluation.validate_dataset
+```
+
+After configuring `DATABASE_URL`, apply the normal schema and load the first
+evaluation seed:
+
+```bash
+python -m ingestion.setup_database
+python -m evaluation.load_dataset
+```
+
+The seed contains 36 proposed cases based on the downloaded TXT sources,
+including one explicit out-of-corpus question. The first run against this fixed
+dataset will become `baseline-v1`; later retrieval and generation experiments
+are stored as separate evaluation runs and compared with that baseline.
+
+Run the current RAG against the dataset and persist the structured traces:
+
+```bash
+python -m evaluation.runner --dataset aviation_golden_v1 --run-name baseline-v1 --run-type baseline
+```
+
+This baseline runner needs a configured `DATABASE_URL`, an indexed corpus in the
+RAG tables, and `OPENAI_API_KEY`. It stores each answer, retrieval list, selected
+context, token counts and timings under `evaluation.runs` and related tables.
+
 ## What's next
 
 - **NTSB as a second source** — accident records via a structured API, a different access pattern than vector search.

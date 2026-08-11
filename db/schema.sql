@@ -191,3 +191,160 @@ as $$
     order by f.score desc
     limit top_k
 $$;
+
+-- ---------------------------------------------------------------------------
+-- Evaluation registry
+-- ---------------------------------------------------------------------------
+-- Evaluation data is deliberately kept outside documents and parent_chunks.
+-- Golden cases are expected answers; they must never become RAG context.
+create schema if not exists evaluation;
+
+create table if not exists evaluation.datasets (
+    dataset_id text primary key,
+    name text not null,
+    version text not null,
+    corpus_manifest_sha256 text,
+    status text not null default 'draft'
+        check (status in ('draft', 'active', 'retired')),
+    metadata jsonb not null default '{}'::jsonb,
+    created_at timestamptz not null default now(),
+    unique (name, version)
+);
+
+create table if not exists evaluation.cases (
+    case_id text primary key,
+    dataset_id text not null references evaluation.datasets(dataset_id),
+    question text not null,
+    reference_answer text,
+    answerable boolean not null,
+    expected_abstention boolean not null default false,
+    aircraft text,
+    variant text,
+    category text not null,
+    difficulty text not null default 'medium',
+    split text not null default 'development'
+        check (split in ('development', 'validation', 'test')),
+    expected_facts jsonb not null default '[]'::jsonb,
+    expected_numbers jsonb not null default '[]'::jsonb,
+    tags jsonb not null default '[]'::jsonb,
+    status text not null default 'proposed'
+        check (status in ('proposed', 'approved', 'rejected')),
+    created_at timestamptz not null default now(),
+    check (answerable or expected_abstention),
+    check (answerable or reference_answer is null)
+);
+
+create index if not exists idx_eval_cases_dataset on evaluation.cases (dataset_id);
+create index if not exists idx_eval_cases_category on evaluation.cases (category);
+create index if not exists idx_eval_cases_aircraft on evaluation.cases (aircraft);
+
+create table if not exists evaluation.evidence (
+    evidence_id bigserial primary key,
+    case_id text not null references evaluation.cases(case_id) on delete cascade,
+    source_file text not null,
+    document_id text,
+    parent_id text,
+    chunk_id text,
+    line_start integer,
+    line_end integer,
+    quote text not null,
+    relevance smallint not null check (relevance between 0 and 3),
+    evidence_type text not null default 'direct',
+    unique (case_id, source_file, line_start, line_end, quote)
+);
+
+create table if not exists evaluation.runs (
+    run_id text primary key,
+    dataset_id text not null references evaluation.datasets(dataset_id),
+    run_name text not null,
+    run_type text not null default 'evaluation'
+        check (run_type in ('baseline', 'evaluation', 'ablation', 'online_sample')),
+    git_commit text,
+    corpus_version text,
+    prompt_version text,
+    config jsonb not null default '{}'::jsonb,
+    model_versions jsonb not null default '{}'::jsonb,
+    status text not null default 'running'
+        check (status in ('running', 'completed', 'failed', 'cancelled')),
+    started_at timestamptz not null default now(),
+    ended_at timestamptz,
+    total_cost numeric,
+    total_latency_ms double precision
+);
+
+create table if not exists evaluation.case_runs (
+    case_run_id bigserial primary key,
+    run_id text not null references evaluation.runs(run_id) on delete cascade,
+    case_id text not null references evaluation.cases(case_id),
+    answer text,
+    abstained boolean,
+    trace_id text,
+    retrieved_count integer,
+    context_tokens integer,
+    input_tokens integer,
+    output_tokens integer,
+    estimated_cost numeric,
+    latency_ms double precision,
+    timings jsonb not null default '{}'::jsonb,
+    raw_output jsonb not null default '{}'::jsonb,
+    unique (run_id, case_id)
+);
+
+create table if not exists evaluation.retrieved_items (
+    retrieved_item_id bigserial primary key,
+    case_run_id bigint not null references evaluation.case_runs(case_run_id) on delete cascade,
+    rank integer not null check (rank > 0),
+    document_id text,
+    parent_id text,
+    chunk_id text,
+    aircraft text,
+    variant text,
+    vector_rank integer,
+    keyword_rank integer,
+    vector_score double precision,
+    keyword_score double precision,
+    rrf_score double precision,
+    token_count integer,
+    relevance smallint check (relevance between 0 and 3),
+    is_duplicate boolean not null default false,
+    unique (case_run_id, rank)
+);
+
+create table if not exists evaluation.context_items (
+    context_item_id bigserial primary key,
+    case_run_id bigint not null references evaluation.case_runs(case_run_id) on delete cascade,
+    position integer not null check (position > 0),
+    parent_id text,
+    source_file text,
+    token_count integer,
+    selected boolean not null default true,
+    unique (case_run_id, position)
+);
+
+create table if not exists evaluation.metrics (
+    metric_id bigserial primary key,
+    case_run_id bigint references evaluation.case_runs(case_run_id) on delete cascade,
+    run_id text not null references evaluation.runs(run_id) on delete cascade,
+    case_id text references evaluation.cases(case_id),
+    metric_name text not null,
+    score double precision,
+    details jsonb not null default '{}'::jsonb,
+    evaluator_version text not null,
+    created_at timestamptz not null default now()
+);
+
+create index if not exists idx_eval_metrics_run on evaluation.metrics (run_id);
+create index if not exists idx_eval_metrics_name on evaluation.metrics (metric_name);
+
+create table if not exists evaluation.feedback (
+    feedback_id text primary key,
+    run_id text references evaluation.runs(run_id),
+    case_id text references evaluation.cases(case_id),
+    trace_id text,
+    rating smallint check (rating between 1 and 5),
+    label text,
+    comment text,
+    corrected_answer text,
+    promoted_to_case boolean not null default false,
+    created_at timestamptz not null default now()
+);

@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 from html import escape
 
 from langsmith import traceable
@@ -17,6 +18,7 @@ from rag.guardrails import (
     validate_question,
 )
 from rag.retrival import search_context
+from rag.result import Citation, RAGResult, estimate_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -35,14 +37,20 @@ openai_client = wrap_openai(OpenAI(api_key=_openai_key))
 
 
 @traceable(run_type="chain", name="rag_pipeline")
-def generate_answer(question):
+def generate_result(question):
+    started_at = time.perf_counter()
     cleaned = validate_question(question)
 
     if RAG_SECURITY:
         _run_detector(cleaned)
         moderate(cleaned, label="question")
 
-    chunks_context = search_context(cleaned, top_k=K_TOP)
+    retrieval_started_at = time.perf_counter()
+    retrieved_items = search_context(cleaned, top_k=K_TOP)
+    retrieval_ms = (time.perf_counter() - retrieval_started_at) * 1000
+
+    context_started_at = time.perf_counter()
+    chunks_context = retrieved_items
     chunks_context = truncate_context(chunks_context)
 
     context = "\n\n".join(
@@ -88,6 +96,7 @@ Answer:"""
     )
     logger.debug("Full prompt:\n%s", prompt_input)
 
+    generation_started_at = time.perf_counter()
     try:
         response = openai_client.responses.create(
             model=MODEL_NAME,
@@ -98,6 +107,7 @@ Answer:"""
     except (RateLimitError, APIError) as e:
         logger.warning("Response request failed (%s).", e)
         raise
+    generation_ms = (time.perf_counter() - generation_started_at) * 1000
 
     answer = response.output_text
 
@@ -107,4 +117,52 @@ Answer:"""
 
     logger.debug("Raw response:\n%s", answer)
 
-    return answer
+    context_text = "\n\n".join(str(chunk.get("texto", "")) for chunk in chunks_context)
+    citations = [
+        Citation(
+            citation_id=f"context_{index:03d}",
+            aircraft=str(chunk.get("aircraft", "")),
+            source=str(chunk.get("font", "")),
+            parent_id=chunk.get("parent_id") or chunk.get("chunk_id"),
+            chunk_id=chunk.get("chunk_id"),
+            quote=str(chunk.get("texto", "")),
+        )
+        for index, chunk in enumerate(chunks_context, start=1)
+    ]
+    usage = getattr(response, "usage", None)
+    token_usage = {
+        "context_estimated": estimate_tokens(context_text),
+        "prompt_estimated": estimate_tokens(instructions + prompt_input),
+    }
+    for field_name in ("input_tokens", "output_tokens", "total_tokens"):
+        value = getattr(usage, field_name, None) if usage is not None else None
+        if value is not None:
+            token_usage[field_name] = int(value)
+
+    return RAGResult(
+        question=cleaned,
+        answer=answer,
+        retrieved_items=list(retrieved_items),
+        context_items=list(chunks_context),
+        citations=citations,
+        abstained=answer.strip().lower()
+        == "i don't have that information in my sources.",
+        timings_ms={
+            "retrieval": retrieval_ms,
+            "context": (generation_started_at - context_started_at) * 1000,
+            "generation": generation_ms,
+            "total": (time.perf_counter() - started_at) * 1000,
+        },
+        token_usage=token_usage,
+        metadata={
+            "model": MODEL_NAME,
+            "top_k": K_TOP,
+            "retrieved_count": len(retrieved_items),
+            "context_count": len(chunks_context),
+        },
+    )
+
+
+def generate_answer(question):
+    """Return only answer text for the existing CLI and application callers."""
+    return generate_result(question).answer
