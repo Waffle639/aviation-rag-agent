@@ -1,15 +1,17 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v --strict-markers"
+addopts = "-v --strict-markers --strict-config --cov=ingestion --cov=rag --cov=configure --cov-branch --cov-report=term-missing --cov-report=xml --cov-fail-under=80"
 markers = [
     "live: tests that call real external services (Supabase, OpenAI, HuggingFace). Enable with --live.",
+    "integration_db: tests that require an ephemeral PostgreSQL/pgvector container.",
+    "e2e: mocked end-to-end tests of the application pipeline.",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",
 ]
 
 [tool.coverage.run]
-source = ["ingestion", "rag", "configure.py"]
+source = ["ingestion", "rag", "configure"]
 branch = true
 omit = ["*/__init__.py"]
 

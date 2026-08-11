@@ -138,6 +138,8 @@ def validate_question(question):
 def _run_detector(question):
     detector = _get_detector()
     if detector is None:
+        if RAG_SECURITY:
+            raise GuardrailError("Prompt Guard is unavailable; request blocked.")
         return
     label, score = detector.classify(question)
     if label == "MALICIOUS":
@@ -201,6 +203,8 @@ _SYSTEM_SENTINELS = [
 
 
 def check_output(answer):
+    if not isinstance(answer, str) or not answer.strip():
+        raise GuardrailError("The generated answer was empty or malformed.")
     lower = answer.lower()
     for phrase in _SYSTEM_SENTINELS:
         if phrase.lower() in lower:
@@ -208,4 +212,4 @@ def check_output(answer):
                 "Possible system prompt leak in output (matched: %s): %s",
                 phrase, answer[:200],
             )
-            return
+            raise GuardrailError("The generated answer was blocked by output security checks.")

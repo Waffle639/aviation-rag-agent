@@ -47,8 +47,11 @@ else:
     # the real .env cannot leak into the mocked session.
     os.environ["OPENAI_API_KEY"] = "sk-test-dummy-key"
     os.environ["DATABASE_URL"] = "postgresql://test:test@localhost:9/testdb"
-    os.environ.setdefault("HF_TOKEN", "hf-test-dummy")
-    os.environ.setdefault("RAG_SECURITY", "true")
+    os.environ["HF_TOKEN"] = "hf-test-dummy"
+    os.environ["RAG_SECURITY"] = "true"
+    os.environ["RAG_MAX_QUESTION_CHARS"] = "1000"
+    os.environ["RAG_MAX_CONTEXT_CHARS"] = "16000"
+    os.environ["RAG_MAX_OUTPUT_TOKENS"] = "2000"
 
 # Never send LangSmith traces during tests.
 os.environ["LANGSMITH_TRACING"] = "false"

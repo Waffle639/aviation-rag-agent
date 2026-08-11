@@ -160,8 +160,7 @@ def _scan_ingestion_chunks(children):
     try:
         from rag.guardrails import RAG_SECURITY
     except ImportError:
-        logger.info("guardrails module not importable — skipping ingestion scan.")
-        return [], []
+        raise RuntimeError("Prompt Guard is unavailable; ingestion blocked.")
 
     if not RAG_SECURITY:
         logger.info("RAG_SECURITY is disabled — skipping ingestion scan.")
@@ -171,11 +170,9 @@ def _scan_ingestion_chunks(children):
         from rag.guardrails import _get_detector
         detector = _get_detector()
         if detector is None:
-            logger.info("Prompt Guard detector not available — skipping ingestion scan.")
-            return [], []
+            raise RuntimeError("Prompt Guard is unavailable; ingestion blocked.")
     except Exception as e:
-        logger.info("Prompt Guard not available (%s) — skipping ingestion scan.", e)
-        return [], []
+        raise RuntimeError("Prompt Guard is unavailable; ingestion blocked.") from e
 
     suspicious = []
     failed_scan = []
@@ -235,7 +232,16 @@ def _run(chunks_route=CHUNKS_ROUTE, parents_route=PARENTS_ROUTE):
         len(parents), len(pending_parents),
     )
 
-    _scan_ingestion_chunks(children)
+    try:
+        suspicious, failed_scan = _scan_ingestion_chunks(children)
+    except Exception:
+        db_connection.close()
+        raise
+    if suspicious or failed_scan:
+        db_connection.close()
+        raise RuntimeError(
+            "Ingestion blocked: Prompt Guard detected malicious or unscannable chunks."
+        )
 
     failed_children = []
     try:

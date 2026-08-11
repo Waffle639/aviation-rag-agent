@@ -11,3 +11,5 @@ langsmith
 torch
 transformers
 pytest
+pytest-cov
+testcontainers[postgres]
