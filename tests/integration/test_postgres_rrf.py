@@ -15,8 +15,8 @@ def postgres_connection():
             "integration_db skipped: install testcontainers[postgres] to run it"
         )
 
-    container = PostgresContainer("pgvector/pgvector:pg16")
     try:
+        container = PostgresContainer("pgvector/pgvector:pg16")
         container.start()
     except Exception as exc:
         pytest.skip(f"integration_db skipped: Docker/pgvector unavailable ({exc})")

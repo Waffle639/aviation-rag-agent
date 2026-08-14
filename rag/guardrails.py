@@ -104,16 +104,35 @@ class PromptGuardDetector:
 
 
 # Zero-width and bidi-override chars are used to obfuscate injections
-# ("igno\u200bre previous instructions"). ZWJ/ZWNJ stay, they're legit.
+# ("igno\u200bre previous instructions"). ZWJ/ZWNJ are kept only in
+# non-ASCII script contexts where they can be legitimate joiners.
 _CONTROL_RE = re.compile(
     "[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f"
-    "\u200b-\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]"
+    "\u200b\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]"
 )
+_JOINER_RE = re.compile("[\u200c\u200d]")
+
+
+def _is_legitimate_joiner(text, index):
+    previous = text[index - 1] if index > 0 else ""
+    following = text[index + 1] if index + 1 < len(text) else ""
+    return (
+        bool(previous and following)
+        and not previous.isspace()
+        and not following.isspace()
+        and not previous.isascii()
+        and not following.isascii()
+    )
 
 
 def _normalize(text):
     text = unicodedata.normalize("NFKC", text)
     text = _CONTROL_RE.sub("", text)
+    text = "".join(
+        char
+        for index, char in enumerate(text)
+        if not _JOINER_RE.fullmatch(char) or _is_legitimate_joiner(text, index)
+    )
     return text.strip()
 
 

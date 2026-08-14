@@ -133,7 +133,8 @@ class TestIngestionQuarantineContract:
         with mock.patch.object(guardrails, "RAG_SECURITY", True), mock.patch.object(
             guardrails, "_get_detector", return_value=detector
         ):
-            embedder._run()
+            with pytest.raises(RuntimeError, match="blocked"):
+                embedder._run()
 
         embedder.embed_batch.assert_not_called()
         embedder.upsert_child_batch.assert_not_called()

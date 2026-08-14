@@ -119,10 +119,18 @@ def import_fresh():
             mock.patch(
                 "langsmith.wrappers.wrap_openai", side_effect=lambda c: c
             ),
+            mock.patch("rag.guardrails._openai_client", None),
+            mock.patch("rag.guardrails._get_openai_client") as mock_moderation_client,
             mock.patch("openai.OpenAI") as mock_openai,
         ):
             connection, cursor = make_connection_mock()
             mock_connect.return_value = connection
+            moderation_response = SimpleNamespace(
+                results=[SimpleNamespace(flagged=False, categories=SimpleNamespace())]
+            )
+            mock_moderation_client.return_value.moderations.create.return_value = (
+                moderation_response
+            )
             for name in to_pop:
                 sys.modules.pop(name, None)
             try:

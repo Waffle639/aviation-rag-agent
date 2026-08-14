@@ -51,40 +51,48 @@ Unit, integration and e2e tests covering chunking logic, guardrail behaviour and
 
 ## Evaluation
 
-The evaluation registry lives in the separate `evaluation` PostgreSQL schema. It
-is intentionally not part of the RAG corpus tables: golden cases are expected
-answers and must never be retrieved as context.
+Evaluation is baseline-first and DB-backed. Golden questions, expected answers
+and evidence live in a separate `evaluation` PostgreSQL schema, never in the RAG
+corpus tables. That separation matters: evaluation data is ground truth, not
+retrievable context.
 
-Create a local corpus manifest and validate the initial English dataset without
-database credentials:
+The initial dataset, `aviation_golden_v1`, contains 36 English cases built from
+the downloaded TXT sources, including one explicit out-of-corpus question. A
+corpus manifest records source files and hashes so a run can be tied back to the
+exact documents it evaluated against.
 
-```bash
-python -m evaluation.manifest
-python -m evaluation.validate_dataset
-```
+The first goal is retrieval quality. For each case, evidence rows are converted
+into qrels and compared with the ranked results returned by hybrid search. The
+deterministic metrics currently tracked are `Recall@k`, `Precision@k`,
+`HitRate@k`, `MRR`, `nDCG@k`, duplicate ratio, unique parent ratio, retrieved
+item count and retrieved token count. These answer questions like: did we find
+the right source, how high did it rank, and how much irrelevant context did we
+send to generation?
 
-After configuring `DATABASE_URL`, apply the normal schema and load the first
-evaluation seed:
+The second goal is run observability. Each evaluated case stores the generated
+answer, abstention decision, retrieved ranking, selected context, estimated
+context tokens, model input/output tokens, latency and raw structured output.
+This makes quality regressions debuggable instead of just reporting a pass/fail
+score.
 
-```bash
-python -m ingestion.setup_database
-python -m evaluation.load_dataset
-```
+PostgreSQL is the source of truth for comparisons. `evaluation.runs` represents
+one experiment, `evaluation.case_runs` stores per-question outputs,
+`evaluation.retrieved_items` and `evaluation.context_items` preserve the evidence
+path, and `evaluation.metrics` stores deterministic scores. Later runs can be
+compared against `baseline-v1` by metric, case type, aircraft, source, latency or
+token usage.
 
-The seed contains 36 proposed cases based on the downloaded TXT sources,
-including one explicit out-of-corpus question. The first run against this fixed
-dataset will become `baseline-v1`; later retrieval and generation experiments
-are stored as separate evaluation runs and compared with that baseline.
+LangSmith is used as the visual trace layer. When tracing is enabled, each case
+appears as `evaluation.<run-name>.<case-id>` with tags for `evaluation`, run
+type, dataset and run name. The same LangSmith trace id is stored in
+`evaluation.case_runs.trace_id`, so a failing DB row can be opened directly as a
+trace showing retrieval, prompt construction, model call and final answer.
 
-Run the current RAG against the dataset and persist the structured traces:
-
-```bash
-python -m evaluation.runner --dataset aviation_golden_v1 --run-name baseline-v1 --run-type baseline
-```
-
-This baseline runner needs a configured `DATABASE_URL`, an indexed corpus in the
-RAG tables, and `OPENAI_API_KEY`. It stores each answer, retrieval list, selected
-context, token counts and timings under `evaluation.runs` and related tables.
+The next evaluation layer is generation quality: citation correctness,
+faithfulness to retrieved context, answer correctness, numeric accuracy,
+abstention accuracy and cost/latency trade-offs. Those are intentionally built on
+top of the deterministic baseline instead of replacing it with an LLM judge too
+early.
 
 ## What's next
 

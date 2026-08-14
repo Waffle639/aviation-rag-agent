@@ -22,6 +22,35 @@ def _run_id(run_name: str) -> str:
     return f"{run_name}-{uuid.uuid4().hex[:12]}"
 
 
+def _langsmith_extra(
+    trace_id: str,
+    db_run_id: str,
+    case_id: str,
+    dataset_id: str,
+    run_name: str,
+    run_type: str,
+    corpus_version: str | None,
+    prompt_version: str | None,
+    model_versions: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "name": f"evaluation.{run_name}.{case_id}",
+        "run_id": trace_id,
+        "tags": ["evaluation", run_type, dataset_id, run_name],
+        "metadata": {
+            "trace_id": trace_id,
+            "db_run_id": db_run_id,
+            "case_id": case_id,
+            "dataset_id": dataset_id,
+            "run_name": run_name,
+            "run_type": run_type,
+            "corpus_version": corpus_version,
+            "prompt_version": prompt_version,
+            "model_versions": model_versions,
+        },
+    }
+
+
 def _insert_run(
     cursor,
     run_id: str,
@@ -199,7 +228,7 @@ def run_evaluation(
     connection,
     dataset_id: str,
     run_name: str,
-    target: Callable[[str], RAGResult],
+    target: Callable[..., RAGResult],
     run_type: str = "evaluation",
     git_commit: str | None = None,
     corpus_version: str | None = None,
@@ -242,7 +271,21 @@ def run_evaluation(
 
             for case_id, question in cases:
                 qrels = _load_qrels(cursor, case_id)
-                result = target(question)
+                trace_id = str(uuid.uuid4())
+                langsmith_extra = _langsmith_extra(
+                    trace_id,
+                    run_id,
+                    case_id,
+                    dataset_id,
+                    run_name,
+                    run_type,
+                    corpus_version,
+                    prompt_version,
+                    model_versions,
+                )
+                result = target(question, langsmith_extra=langsmith_extra)
+                result.metadata["trace_id"] = trace_id
+                result.metadata["langsmith_name"] = langsmith_extra["name"]
                 case_run_id = _insert_case_result(cursor, run_id, case_id, result)
                 _insert_items(cursor, case_run_id, result)
                 metrics = evaluate_retrieval(_retrieved_items_for_metrics(result), qrels)

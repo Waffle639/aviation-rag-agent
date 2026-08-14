@@ -46,7 +46,14 @@ def test_generate_result_keeps_retrieval_context_and_timings(import_fresh):
             mock.patch.object(generator, "moderate"),
             mock.patch.object(generator, "check_output"),
         ):
-            result = generator.generate_result("What is the length?")
+            result = generator.generate_result(
+                "What is the length?",
+                langsmith_extra={
+                    "name": "evaluation.baseline-v1.av_0001",
+                    "tags": ["evaluation"],
+                    "metadata": {"case_id": "av_0001"},
+                },
+            )
 
     assert result.answer == "The answer is 250 feet."
     assert result.retrieved_items == retrieved

@@ -1,6 +1,6 @@
 from rag.result import RAGResult
 
-from evaluation.runner import run_evaluation
+from evaluation.runner import _langsmith_extra, run_evaluation
 
 
 class FakeCursor:
@@ -82,6 +82,32 @@ def _sample_result(question):
     )
 
 
+def test_langsmith_extra_names_and_tags_evaluation_cases():
+    extra = _langsmith_extra(
+        trace_id="00000000-0000-0000-0000-000000000001",
+        db_run_id="baseline-v1-abc123",
+        case_id="av_0001",
+        dataset_id="aviation_golden_v1",
+        run_name="baseline-v1",
+        run_type="baseline",
+        corpus_version="corpus-v1",
+        prompt_version="prompt-v1",
+        model_versions={"generation": "test-model"},
+    )
+
+    assert extra["name"] == "evaluation.baseline-v1.av_0001"
+    assert extra["run_id"] == "00000000-0000-0000-0000-000000000001"
+    assert extra["tags"] == [
+        "evaluation",
+        "baseline",
+        "aviation_golden_v1",
+        "baseline-v1",
+    ]
+    assert extra["metadata"]["db_run_id"] == "baseline-v1-abc123"
+    assert extra["metadata"]["case_id"] == "av_0001"
+    assert extra["metadata"]["model_versions"] == {"generation": "test-model"}
+
+
 def test_run_evaluation_persists_run_cases_and_trace_items():
     connection = FakeConnection(
         [("av_0001", "Question one?"), ("av_0002", "Question two?")],
@@ -91,10 +117,14 @@ def test_run_evaluation_persists_run_cases_and_trace_items():
         },
     )
     seen_questions = []
+    seen_extras = []
 
-    def target(question):
+    def target(question, langsmith_extra=None):
         seen_questions.append(question)
-        return _sample_result(question)
+        seen_extras.append(langsmith_extra)
+        result = _sample_result(question)
+        result.metadata.update(langsmith_extra["metadata"])
+        return result
 
     run_id = run_evaluation(
         connection,
@@ -109,6 +139,18 @@ def test_run_evaluation_persists_run_cases_and_trace_items():
     sql = [call[0] for call in calls]
     assert run_id.startswith("baseline-v1-")
     assert seen_questions == ["Question one?", "Question two?"]
+    assert [extra["name"] for extra in seen_extras] == [
+        "evaluation.baseline-v1.av_0001",
+        "evaluation.baseline-v1.av_0002",
+    ]
+    assert seen_extras[0]["metadata"]["db_run_id"] == run_id
+    assert seen_extras[0]["metadata"]["case_id"] == "av_0001"
+    assert seen_extras[0]["tags"] == [
+        "evaluation",
+        "baseline",
+        "aviation_golden_v1",
+        "baseline-v1",
+    ]
     assert connection.commits == 2
     assert connection.rollbacks == 0
     assert any(statement.startswith("insert into evaluation.runs") for statement in sql)
@@ -117,12 +159,19 @@ def test_run_evaluation_persists_run_cases_and_trace_items():
     assert sum(statement.startswith("insert into evaluation.context_items") for statement in sql) == 2
     assert sum(statement.startswith("insert into evaluation.metrics") for statement in sql) == 34
     assert any("set status = 'completed'" in statement for statement in sql)
+    case_run_params = [
+        params for statement, params in calls
+        if statement.startswith("insert into evaluation.case_runs")
+    ]
+    assert case_run_params[0][4] == seen_extras[0]["run_id"]
+    assert case_run_params[1][4] == seen_extras[1]["run_id"]
 
 
 def test_run_evaluation_marks_run_failed_after_case_error():
     connection = FakeConnection([("av_0001", "Question one?")])
 
-    def target(_question):
+    def target(_question, langsmith_extra=None):
+        assert langsmith_extra["name"] == "evaluation.baseline-v1.av_0001"
         raise RuntimeError("boom")
 
     try:
