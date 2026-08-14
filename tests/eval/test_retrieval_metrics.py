@@ -44,3 +44,16 @@ def test_evaluate_retrieval_returns_named_metrics():
     assert metrics["recall_at_3"] == pytest.approx(1.0)
     assert metrics["precision_at_3"] == pytest.approx(2 / 3)
     assert metrics["ndcg_at_3"] == pytest.approx(0.7364, abs=1e-4)
+
+
+def test_ranked_quality_metrics_deduplicate_document_ids_before_scoring():
+    items = [
+        RetrievedItem(item_id="doc-a", parent_id="doc-a-p001"),
+        RetrievedItem(item_id="doc-a", parent_id="doc-a-p002"),
+        RetrievedItem(item_id="doc-b", parent_id="doc-b-p001"),
+    ]
+
+    metrics = evaluate_retrieval(items, {"doc-b": 3}, k_values=(3,))
+
+    assert metrics["mrr"] == pytest.approx(1 / 2)
+    assert metrics["recall_at_3"] == pytest.approx(1.0)

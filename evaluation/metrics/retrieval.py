@@ -134,7 +134,9 @@ def evaluate_retrieval(
     relevance_threshold: int = 2,
 ) -> dict[str, float | int]:
     """Calculate the first retrieval metrics for one evaluated query."""
-    ranked_ids = [item.item_id for item in items]
+    # Quality qrels are document-level; duplicate parents from one document
+    # should not get repeated credit in rank-based metrics.
+    ranked_ids = _unique_ids(item.item_id for item in items)
     metrics: dict[str, float | int] = {
         "mrr": mean_reciprocal_rank(ranked_ids, qrels, relevance_threshold),
         "unique_parent_ratio": unique_parent_ratio(items),

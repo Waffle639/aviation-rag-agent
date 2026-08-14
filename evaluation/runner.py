@@ -172,7 +172,7 @@ def _load_qrels(cursor, case_id: str) -> dict[str, int]:
     )
     qrels: dict[str, int] = {}
     for document_id, parent_id, chunk_id, relevance in cursor.fetchall():
-        item_id = parent_id or chunk_id or document_id
+        item_id = document_id or parent_id or chunk_id
         if not item_id:
             continue
         qrels[item_id] = max(qrels.get(item_id, 0), int(relevance))
@@ -182,7 +182,7 @@ def _load_qrels(cursor, case_id: str) -> dict[str, int]:
 def _retrieved_items_for_metrics(result: RAGResult) -> list[RetrievedItem]:
     items = []
     for item in result.retrieved_items:
-        item_id = item.get("parent_id") or item.get("chunk_id") or item.get("document_id")
+        item_id = item.get("document_id") or item.get("parent_id") or item.get("chunk_id")
         if not item_id:
             continue
         items.append(
@@ -284,6 +284,13 @@ def run_evaluation(
                     model_versions,
                 )
                 result = target(question, langsmith_extra=langsmith_extra)
+                if qrels and result.retrieved_items and any(
+                    not item.get("document_id") for item in result.retrieved_items
+                ):
+                    raise ValueError(
+                        "Retriever results must include document_id to calculate "
+                        f"document-level metrics for case {case_id}."
+                    )
                 result.metadata["trace_id"] = trace_id
                 result.metadata["langsmith_name"] = langsmith_extra["name"]
                 case_run_id = _insert_case_result(cursor, run_id, case_id, result)

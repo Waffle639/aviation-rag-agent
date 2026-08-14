@@ -21,23 +21,34 @@ CHUNKS_ROUTE = "data/processed/chunks"
 PARENTS_ROUTE = "data/processed/parents"
 
 UPSERT_CHILD_SQL = """
-    insert into documents (aircraft, font, chunk_id, texto, embedding, parent_id)
+    insert into documents (
+        aircraft, font, chunk_id, texto, embedding, parent_id,
+        document_id, source_file, token_count
+    )
     values %s
     on conflict (chunk_id) do update set
         aircraft = excluded.aircraft,
         font = excluded.font,
         texto = excluded.texto,
         embedding = excluded.embedding,
-        parent_id = excluded.parent_id
+        parent_id = excluded.parent_id,
+        document_id = excluded.document_id,
+        source_file = excluded.source_file,
+        token_count = excluded.token_count
 """
 
 UPSERT_PARENT_SQL = """
-    insert into parent_chunks (aircraft, font, parent_id, texto)
+    insert into parent_chunks (
+        aircraft, font, parent_id, texto, document_id, source_file, token_count
+    )
     values %s
     on conflict (parent_id) do update set
         aircraft = excluded.aircraft,
         font = excluded.font,
-        texto = excluded.texto
+        texto = excluded.texto,
+        document_id = excluded.document_id,
+        source_file = excluded.source_file,
+        token_count = excluded.token_count
 """
 
 logging.basicConfig(
@@ -257,6 +268,9 @@ def _run(chunks_route=CHUNKS_ROUTE, parents_route=PARENTS_ROUTE):
                         c["texto"],
                         Vector(vector),
                         c["metadata"]["parent_id"],
+                        c["metadata"].get("document_id"),
+                        c["metadata"].get("source_file"),
+                        c["metadata"].get("token_count"),
                     )
                     for c, vector in zip(batch, vectors)
                 ]
@@ -275,6 +289,9 @@ def _run(chunks_route=CHUNKS_ROUTE, parents_route=PARENTS_ROUTE):
                         p["metadata"]["fuente"],
                         p["metadata"]["parent_id"],
                         p["texto"],
+                        p["metadata"].get("document_id"),
+                        p["metadata"].get("source_file"),
+                        p["metadata"].get("token_count"),
                     )
                     for p in batch
                 ]

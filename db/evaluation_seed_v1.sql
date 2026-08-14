@@ -329,6 +329,9 @@ values
 )
 on conflict (case_id) do nothing;
 
+delete from evaluation.evidence
+where case_id in ('av_0017', 'av_0018', 'av_0019');
+
 insert into evaluation.evidence (
     case_id, source_file, document_id, line_start, line_end, quote, relevance
 )
@@ -349,9 +352,9 @@ values
 ('av_0014', 'data/raw/wiki/Airbus_A330.txt', '32c0e25274f78e18', 4, 4, 'The A330neo (new engine option) comprising the A330-800 and -900', 3),
 ('av_0015', 'data/raw/wiki/Airbus_A330.txt', '32c0e25274f78e18', 96, 96, 'Its MTOW grew from 212 tonnes (467,000 lb) at introduction to 242 tonnes (534,000 lb) in 2015', 3),
 ('av_0016', 'data/raw/wiki/Airbus_A330.txt', '32c0e25274f78e18', 128, 128, 'The freighter has a range of 7,400 km (4,000 nmi; 4,600 mi) with a 65 tonnes (140,000 lb) payload, or 5,900 km (3,200 nmi; 3,700 mi) with 70 tonnes (150,000 lb).', 3),
-('av_0017', 'data/raw/wiki/Airbus_A330.txt', '32c0e25274f78e18', 135, 135, 'the 63.69 m (208 ft 11 in) long −300 has a range of 11,750 km (6,340 nmi; 7,300 mi), typically carries 277 passengers', 3),
-('av_0018', 'data/raw/wiki/Boeing_747.txt', 'f3d8f5418129b47f', 2, 2, 'The 747''s first flight took place on February 9, 1969, and the 747 was certified in December 1969. It entered service with Pan Am on January 22, 1970.', 3),
-('av_0019', 'data/raw/wiki/Boeing_747.txt', 'f3d8f5418129b47f', 3, 3, 'With a ten-abreast economy seating, it typically accommodates 366 passengers in three travel classes. It has a pronounced 37.5° wing sweep, allowing a Mach 0.85 (490 kn; 900 km/h) cruise speed', 3),
+('av_0017', 'data/raw/wiki/Boeing_747.txt', 'f3d8f5418129b47f', 2, 2, 'The 747''s first flight took place on February 9, 1969, and the 747 was certified in December 1969. It entered service with Pan Am on January 22, 1970.', 3),
+('av_0018', 'data/raw/wiki/Boeing_747.txt', 'f3d8f5418129b47f', 3, 3, 'With a ten-abreast economy seating, it typically accommodates 366 passengers in three travel classes. It has a pronounced 37.5° wing sweep, allowing a Mach 0.85 (490 kn; 900 km/h) cruise speed', 3),
+('av_0019', 'data/raw/wiki/Boeing_747.txt', 'f3d8f5418129b47f', 4, 4, 'The stretched 747-8 was launched on November 14, 2005, using the General Electric GEnx engine first developed for the 787 Dreamliner.', 3),
 ('av_0020', 'data/raw/wiki/Boeing_747-8.txt', '8379b78c476be73b', 5, 5, 'reaching a total length of 250 feet (76 m) ... its maximum takeoff weight (MTOW) increases to 975,000 pounds (442 t)', 3),
 ('av_0021', 'data/raw/wiki/Boeing_747-8.txt', '8379b78c476be73b', 6, 6, 'The freighter version, with a shorter upper deck, can haul 308,000 pounds (140 t) over 4,120 nautical miles', 3),
 ('av_0022', 'data/raw/wiki/Boeing_747-8.txt', '8379b78c476be73b', 7, 7, 'The intercontinental version can carry 467 passengers in a typical three-class configuration with a range of 7,790 nautical miles', 3),

@@ -1,6 +1,11 @@
 from rag.result import RAGResult
 
-from evaluation.runner import _langsmith_extra, run_evaluation
+from evaluation.runner import (
+    _langsmith_extra,
+    _load_qrels,
+    _retrieved_items_for_metrics,
+    run_evaluation,
+)
 
 
 class FakeCursor:
@@ -108,6 +113,19 @@ def test_langsmith_extra_names_and_tags_evaluation_cases():
     assert extra["metadata"]["model_versions"] == {"generation": "test-model"}
 
 
+def test_qrels_and_retrieved_items_use_document_id_as_canonical_metric_identity():
+    cursor = FakeCursor(
+        [],
+        qrels={"av_0001": [("boeing_747_wiki", "boeing_747_wiki_p001", None, 3)]},
+    )
+
+    qrels = _load_qrels(cursor, "av_0001")
+    items = _retrieved_items_for_metrics(_sample_result("Question?"))
+
+    assert qrels == {"boeing_747_wiki": 3}
+    assert [item.item_id for item in items] == ["boeing_747_wiki"]
+
+
 def test_run_evaluation_persists_run_cases_and_trace_items():
     connection = FakeConnection(
         [("av_0001", "Question one?"), ("av_0002", "Question two?")],
@@ -165,6 +183,33 @@ def test_run_evaluation_persists_run_cases_and_trace_items():
     ]
     assert case_run_params[0][4] == seen_extras[0]["run_id"]
     assert case_run_params[1][4] == seen_extras[1]["run_id"]
+
+
+def test_run_evaluation_rejects_document_level_qrels_without_retrieved_document_id():
+    connection = FakeConnection(
+        [("av_0001", "Question one?")],
+        qrels={"av_0001": [("boeing_747_wiki", None, None, 3)]},
+    )
+
+    def target(question, langsmith_extra=None):
+        result = _sample_result(question)
+        result.retrieved_items[0].pop("document_id")
+        return result
+
+    try:
+        run_evaluation(
+            connection,
+            dataset_id="aviation_golden_v1",
+            run_name="baseline-v1",
+            target=target,
+        )
+    except ValueError as exc:
+        assert "document_id" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
+
+    sql = [call[0] for call in connection.cursor_instance.calls]
+    assert any("set status = 'failed'" in statement for statement in sql)
 
 
 def test_run_evaluation_marks_run_failed_after_case_error():

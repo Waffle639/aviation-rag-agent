@@ -94,6 +94,54 @@ abstention accuracy and cost/latency trade-offs. Those are intentionally built o
 top of the deterministic baseline instead of replacing it with an LLM judge too
 early.
 
+## Evaluation dashboard
+
+`Aviation RAG Evaluations` is a read-only Streamlit dashboard for comparing
+persisted evaluation runs. It is designed for public demo use: metrics, cases,
+answers, retrieved items and context can be shown, but traces, raw outputs and
+private configuration fields are not exposed.
+
+Install the lightweight dashboard dependencies:
+
+```bash
+python -m pip install -r dashboard/requirements.txt
+```
+
+Run locally:
+
+```bash
+python -m streamlit run dashboard/app.py
+```
+
+Required configuration:
+
+```bash
+DATABASE_URL=postgresql://...
+```
+
+For a public deployment, use a dedicated PostgreSQL role with read-only access
+to the `evaluation` schema and require TLS (`sslmode=require`). Do not use the
+owner/admin database user in Streamlit Cloud. Optional settings are
+`DASHBOARD_DB_POOL_MIN`, `DASHBOARD_DB_POOL_MAX`,
+`DASHBOARD_DB_CONNECT_TIMEOUT`, `DASHBOARD_DB_STATEMENT_TIMEOUT_MS` and
+`DASHBOARD_REQUIRE_SSL`.
+
+The dashboard contains three views:
+
+- `Overview`: current run health, KPI cards, metric history, category breakdowns and largest regressions.
+- `Run Comparison`: baseline vs candidate comparison paired by case, metric and evaluator version.
+- `Case Explorer`: question, reference answer, generated answer, public metrics, golden evidence, retrieved ranking and context used.
+
+The user selects a single evaluation run. The dataset is inferred from that run,
+and the dashboard automatically picks the most recent compatible baseline from
+the same dataset. A baseline override is available under an advanced expander,
+but the main demo flow does not require choosing datasets or IDs manually.
+
+Known limitation: the dashboard visualizes the evaluation data as stored. Older
+runs may still reflect historical evaluator or qrel identity issues; those runs
+should be treated as exploratory until regenerated with corrected evidence
+targets.
+
 ## What's next
 
 - **NTSB as a second source** — accident records via a structured API, a different access pattern than vector search.

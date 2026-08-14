@@ -21,6 +21,10 @@ create table if not exists documents (
     created_at timestamptz default now()
 );
 
+alter table documents add column if not exists document_id text;
+alter table documents add column if not exists source_file text;
+alter table documents add column if not exists token_count integer;
+
 -- Fast filtering by aircraft
 create index if not exists idx_documents_aircraft on documents (aircraft);
 
@@ -43,6 +47,10 @@ create table if not exists parent_chunks (
     texto text not null,
     created_at timestamptz default now()
 );
+
+alter table parent_chunks add column if not exists document_id text;
+alter table parent_chunks add column if not exists source_file text;
+alter table parent_chunks add column if not exists token_count integer;
 
 create index if not exists idx_parent_chunks_parent_id on parent_chunks (parent_id);
 
@@ -150,20 +158,23 @@ returns table (
 )
 language sql stable
 as $$
-    with vec as (
+    with vec_scores as (
         select d.parent_id,
-               row_number() over (order by d.embedding <=> query_embedding) as rnk
+               min(d.embedding <=> query_embedding) as distance
         from documents d
         where d.parent_id is not null
           and (aircraft_filter is null or d.aircraft = aircraft_filter)
-        order by d.embedding <=> query_embedding
+        group by d.parent_id
+        order by distance
         limit candidates
     ),
-    kw as (
+    vec as (
+        select parent_id, row_number() over (order by distance) as rnk
+        from vec_scores
+    ),
+    kw_scores as (
         select d.parent_id,
-               row_number() over (
-                   order by ts_rank(d.texto_tsv, t.q) desc
-               ) as rnk
+               max(ts_rank(d.texto_tsv, t.q)) as keyword_score
         from documents d
         cross join lateral (
             select string_agg(lexeme, ' | ' order by lexeme)::tsquery as q
@@ -173,8 +184,13 @@ as $$
           and (aircraft_filter is null or d.aircraft = aircraft_filter)
           and t.q is not null
           and d.texto_tsv @@ t.q
-        order by ts_rank(d.texto_tsv, t.q) desc
+        group by d.parent_id
+        order by keyword_score desc
         limit candidates
+    ),
+    kw as (
+        select parent_id, row_number() over (order by keyword_score desc) as rnk
+        from kw_scores
     ),
     fused as (
         select parent_id, sum(1.0 / (60 + rnk)) as score
