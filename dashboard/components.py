@@ -48,6 +48,8 @@ def format_delta(value: Any, unit: str = "score") -> str:
         return f"{sign}{number * 100:.1f} pp"
     if unit == "milliseconds":
         return f"{sign}{number:.0f} ms"
+    if unit == "currency":
+        return f"-${abs(number):.4f}" if number < 0 else f"{sign}${number:.4f}"
     if unit in {"count", "tokens"}:
         return f"{sign}{number:,.0f}"
     return f"{sign}{number:.3f}"
@@ -80,6 +82,7 @@ def kpi_card(
     unit: str = "percent",
     sample_count: Any = None,
     normalized_delta: Any = None,
+    description: str | None = None,
 ) -> None:
     direction = _to_float(normalized_delta if normalized_delta is not None else delta)
     if direction is None or direction == 0:
@@ -89,18 +92,21 @@ def kpi_card(
     else:
         delta_class = "delta-bad"
 
-    sample = "" if sample_count is None else f"<div class='small-muted'>n = {escape(str(sample_count))}</div>"
-    st.markdown(
-        f"""
-        <div class="kpi-card">
-          <div class="kpi-label">{escape(label)}</div>
-          <div class="kpi-value">{escape(format_score(value, unit))}</div>
-          <div class="kpi-delta {delta_class}">{escape(format_delta(delta, unit))}</div>
-          {sample}
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    with st.container(border=True):
+        label_html = escape(label)
+        if description:
+            label_html += f" <span class='info-icon' data-tooltip='{escape(description, quote=True)}'>i</span>"
+        st.markdown(f"<div class='kpi-label'>{label_html}</div>", unsafe_allow_html=True)
+        st.markdown(
+            f"<div class='kpi-value'>{escape(format_score(value, unit))}</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            f"<div class='kpi-delta {delta_class}'>{escape(format_delta(delta, unit))}</div>",
+            unsafe_allow_html=True,
+        )
+        if sample_count is not None:
+            st.markdown(f"<div class='small-muted'>n = {escape(str(sample_count))}</div>", unsafe_allow_html=True)
 
 
 def panel_title(title: str) -> None:

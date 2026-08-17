@@ -8,13 +8,15 @@ from typing import Any
 import streamlit as st
 
 from dashboard.components import alert, panel_title
-from dashboard.queries import DISPLAY_METRICS, metric_definition
+from dashboard.queries import display_metrics_for_run, metric_definition
 
 
 def render(repo, run_id: str, baseline_run_id: str | None) -> None:
+    summary = repo.get_run_summary(run_id)
+    display_metrics = display_metrics_for_run(summary)
     metric_name = st.selectbox(
         "Ranking metric",
-        DISPLAY_METRICS,
+        display_metrics,
         index=1,
         format_func=lambda name: metric_definition(name).label,
     )

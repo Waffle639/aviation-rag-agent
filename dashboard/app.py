@@ -32,7 +32,8 @@ def _all_runs(_repo: EvaluationRepository) -> list[dict]:
 def _run_label(run: dict) -> str:
     status = run.get("status") or "unknown"
     cases = _case_progress(run)
-    return f"{run.get('run_name')} | {run.get('run_type')} | {status} | {cases} cases"
+    top_k = f" | top_k={run.get('top_k')}" if run.get("top_k") else ""
+    return f"{run.get('run_name')} | {run.get('run_type')} | {status}{top_k} | {cases} cases"
 
 
 def _case_progress(run: dict) -> str:
@@ -98,133 +99,163 @@ def main() -> None:
         alert("Selected evaluation run was not found.")
         st.stop()
 
-    _render_evaluation_picker(runs, selected_run)
-
-    selected_run = _run_by_id(runs, st.session_state.candidate_run_id)
-    if not selected_run:
-        alert("Selected evaluation run was not found.")
-        st.stop()
-
     run_id = selected_run["run_id"]
     dataset_id = selected_run["dataset_id"]
-    recommended_baseline_id = _recommended_baseline(runs, selected_run)
-    if (
-        "baseline_run_id" not in st.session_state
-        or not _run_by_id(_compatible_runs(runs, selected_run), st.session_state.baseline_run_id)
-    ):
-        st.session_state.baseline_run_id = recommended_baseline_id
-    baseline_run_id = st.session_state.baseline_run_id
-
-    baseline_run = _run_by_id(runs, baseline_run_id)
-    _render_selection_summary(runs, selected_run, baseline_run)
-
     header_status = selected_run.get("status") if selected_run else None
     if header_status and header_status != "completed":
         alert(f"Selected run status: {header_status}. Metrics may be incomplete.")
 
-    page = st.radio(
+    page = st.segmented_control(
         "Navigation",
-        ["Overview", "Run Comparison", "Case Explorer"],
-        horizontal=True,
+        ["Overview", "Run Comparison", "Case Explorer", "Delete Evaluation"],
+        default="Overview",
+        key="dashboard_page",
         label_visibility="collapsed",
     )
+    page = page or "Overview"
+
+    recommended_baseline_id = _recommended_baseline(runs, selected_run)
+    if (
+        "baseline_run_id" not in st.session_state
+        or not _run_by_id([run for run in runs if run.get("run_id") != run_id], st.session_state.baseline_run_id)
+    ):
+        st.session_state.baseline_run_id = recommended_baseline_id
+    baseline_run_id = st.session_state.baseline_run_id
+    baseline_run = _run_by_id(runs, baseline_run_id)
 
     if page == "Overview":
-        overview.render(repo, dataset_id, run_id, baseline_run_id)
+        _render_primary_selector(runs, selected_run)
+        overview.render(repo, dataset_id, run_id)
     elif page == "Run Comparison":
+        _render_comparison_selectors(runs, selected_run, baseline_run)
         comparison.render(repo, run_id, baseline_run_id)
-    else:
+    elif page == "Case Explorer":
+        _render_primary_selector(runs, selected_run)
         cases.render(repo, run_id, baseline_run_id)
+    else:
+        _render_delete_evaluation(repo, runs, selected_run)
 
 
-def _render_evaluation_picker(runs: list[dict], selected_run: dict) -> None:
-    top_left, top_right = st.columns([2.6, 0.7])
-    with top_left:
-        st.markdown("### Current evaluation")
-        st.markdown(
-            f"""
-            <div class="evaluation-card">
-              <strong>{escape(str(selected_run.get('run_name') or 'Untitled evaluation'))}</strong>
-              <div class="evaluation-meta">
-                Dataset {escape(str(selected_run.get('dataset_name') or 'Unknown'))} v{escape(str(selected_run.get('dataset_version') or 'Unknown'))} | 
-                {escape(str(selected_run.get('run_type') or 'unknown'))} | {escape(str(selected_run.get('status') or 'unknown'))} | {_case_progress(selected_run)} cases
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with top_right:
-        st.write("")
-        st.write("")
-        if st.button("Refresh data", use_container_width=True):
+def _render_primary_selector(runs: list[dict], evaluation_a: dict, *, show_card: bool = True) -> None:
+    with st.container(border=True):
+        left, right = st.columns([2.4, 0.35], vertical_alignment="bottom")
+        run_ids = [run["run_id"] for run in runs]
+        with left:
+            selected_a = st.selectbox(
+                "Evaluation",
+                run_ids,
+                index=run_ids.index(evaluation_a["run_id"]),
+                format_func=lambda run_id: _run_label(_run_by_id(runs, run_id) or {}),
+                help="Type to search by run name, type, or status.",
+            )
+            if selected_a != st.session_state.candidate_run_id:
+                st.session_state.candidate_run_id = selected_a
+                st.session_state.pop("baseline_run_id", None)
+                st.rerun()
+        with right:
+            if st.button("Refresh", use_container_width=True):
+                st.cache_data.clear()
+                st.rerun()
+    if show_card:
+        _evaluation_card("Evaluation", evaluation_a)
+
+
+def _render_comparison_selectors(runs: list[dict], evaluation_a: dict, evaluation_b: dict | None) -> None:
+    run_ids = [run["run_id"] for run in runs]
+    _, refresh = st.columns([1, 0.2], vertical_alignment="bottom")
+    with refresh:
+        if st.button("Refresh", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
 
-    with st.expander("Change evaluation", expanded=False):
-        st.caption("Pick the evaluation run you want to inspect. The dataset is inferred automatically.")
-        table_rows = [_run_table_row(run) for run in runs]
-        event = st.dataframe(
-            table_rows,
-            use_container_width=True,
-            hide_index=True,
-            column_order=["evaluation", "type", "status", "dataset", "cases", "started_at"],
-            column_config={
-                "evaluation": "Evaluation",
-                "type": "Type",
-                "status": "Status",
-                "dataset": "Dataset",
-                "cases": "Cases",
-                "started_at": "Started",
-            },
-            on_select="rerun",
-            selection_mode="single-row",
-            key="evaluation_run_table",
-        )
-        selected_rows = event.selection.rows if hasattr(event, "selection") else []
-        if selected_rows:
-            selected_index = selected_rows[0]
-            selected_id = table_rows[selected_index]["run_id"]
-            if selected_id != st.session_state.candidate_run_id:
-                st.session_state.candidate_run_id = selected_id
+    left, right = st.columns(2)
+
+    with left:
+        with st.popover(_comparison_picker_label("Evaluation A", evaluation_a), use_container_width=True):
+            if st.session_state.get("comparison_a_selector") not in run_ids:
+                st.session_state.comparison_a_selector = evaluation_a["run_id"]
+            selected_a = st.selectbox(
+                "Search evaluations",
+                run_ids,
+                format_func=lambda run_id: _run_label(_run_by_id(runs, run_id) or {}),
+                key="comparison_a_selector",
+            )
+            if selected_a != st.session_state.candidate_run_id:
+                st.session_state.candidate_run_id = selected_a
                 st.session_state.pop("baseline_run_id", None)
+                st.session_state.pop("comparison_b_selector", None)
                 st.rerun()
 
-
-def _render_selection_summary(runs: list[dict], candidate: dict, baseline: dict | None) -> None:
-    left, right = st.columns([1.4, 1])
-    with left:
-        st.caption(
-            f"Dataset is inferred from the selected evaluation: "
-            f"{candidate.get('dataset_name')} v{candidate.get('dataset_version')} "
-            f"({candidate.get('dataset_status')})."
-        )
     with right:
-        if baseline:
-            st.markdown(
-                f"""
-                <div class="baseline-card">
-                  <strong>Baseline comparison</strong><br>
-                  {escape(str(baseline.get('run_name') or 'Untitled baseline'))} | {_case_progress(baseline)} cases
-                </div>
-                """,
-                unsafe_allow_html=True,
+        options_b = [None] + [run_id for run_id in run_ids if run_id != evaluation_a["run_id"]]
+        current_b = evaluation_b["run_id"] if evaluation_b else None
+        with st.popover(_comparison_picker_label("Evaluation B", evaluation_b), use_container_width=True):
+            if st.session_state.get("comparison_b_selector") not in options_b:
+                st.session_state.comparison_b_selector = current_b
+            selected_b = st.selectbox(
+                "Search evaluations",
+                options_b,
+                format_func=lambda run_id: "No comparison" if run_id is None else _run_label(_run_by_id(runs, run_id) or {}),
+                key="comparison_b_selector",
             )
-        else:
-            alert("No compatible baseline was found for this evaluation.")
+            if selected_b != st.session_state.get("baseline_run_id"):
+                st.session_state.baseline_run_id = selected_b
+                st.rerun()
 
-    compatible = _compatible_runs(runs, candidate)
-    if compatible:
-        with st.expander("Advanced baseline override", expanded=False):
-            baseline_options = [run["run_id"] for run in compatible]
-            current = st.session_state.get("baseline_run_id")
-            index = baseline_options.index(current) if current in baseline_options else 0
-            st.radio(
-                "Baseline run",
-                baseline_options,
-                index=index,
-                format_func=lambda run_id: _run_label(next(run for run in compatible if run["run_id"] == run_id)),
-                key="baseline_run_id",
-            )
+def _comparison_picker_label(title: str, run: dict | None) -> str:
+    if not run:
+        return f"{title}  |  Select evaluation"
+    return f"{title}  |  {run.get('run_name') or 'Untitled evaluation'}  |  {run.get('status') or 'unknown'}"
+
+
+def _evaluation_card(title: str, run: dict) -> None:
+    st.markdown(
+        f"""
+        <div class="evaluation-card">
+          <strong>{escape(title)}: {escape(str(run.get('run_name') or 'Untitled evaluation'))}</strong>
+          <div class="evaluation-meta">
+            Dataset {escape(str(run.get('dataset_name') or run.get('dataset_id') or 'Unknown'))} |
+            {escape(str(run.get('run_type') or 'unknown'))} | {escape(str(run.get('status') or 'unknown'))} | {_case_progress(run)} cases | top_k {escape(str(run.get('top_k') or 'Unknown'))}
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_delete_evaluation(repo: EvaluationRepository, runs: list[dict], selected_run: dict) -> None:
+    st.markdown("### Delete Evaluation")
+    alert("This permanently deletes the selected evaluation and its results.")
+    _render_primary_selector(runs, selected_run, show_card=False)
+    st.markdown(
+        f"""
+        <div class="delete-summary">
+          <strong>{escape(str(selected_run.get('run_name') or 'Untitled evaluation'))}</strong>
+          <span>{escape(str(selected_run.get('dataset_name') or selected_run.get('dataset_id') or 'Unknown dataset'))} | {escape(str(selected_run.get('status') or 'unknown'))}</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.caption("Copy this run_id into the confirmation field.")
+    st.code(selected_run["run_id"], language=None)
+    confirm = st.text_input("Type the exact run_id to confirm", key="delete_run_confirm_page")
+    can_delete = confirm == selected_run["run_id"] and selected_run.get("status") != "running"
+    if selected_run.get("status") == "running":
+        alert("A running evaluation cannot be deleted.")
+    if st.button("Delete evaluation", disabled=not can_delete, type="primary", use_container_width=True):
+        try:
+            deleted = repo.delete_run(selected_run["run_id"])
+        except Exception as exc:
+            alert(f"Could not delete the evaluation: {exc}")
+        else:
+            if deleted:
+                st.cache_data.clear()
+                st.session_state.pop("candidate_run_id", None)
+                st.session_state.pop("baseline_run_id", None)
+                st.success("Evaluation deleted.")
+                st.rerun()
+            else:
+                alert("The evaluation no longer exists.")
 
 
 def _run_table_row(run: dict) -> dict:

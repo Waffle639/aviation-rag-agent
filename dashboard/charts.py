@@ -126,7 +126,7 @@ def breakdown_bar(rows: list[dict[str, Any]], metric_name: str = "mrr") -> go.Fi
 
 
 def comparison_bar(rows: list[dict[str, Any]]) -> go.Figure:
-    labels = [metric_definition(row["metric_name"]).label for row in rows]
+    labels = [row.get("label") or metric_definition(row["metric_name"]).label for row in rows]
     baseline = [_float(row.get("baseline_mean")) for row in rows]
     candidate = [_float(row.get("candidate_mean")) for row in rows]
     deltas = [_float(row.get("mean_delta")) for row in rows]
@@ -147,7 +147,8 @@ def comparison_bar(rows: list[dict[str, Any]]) -> go.Figure:
         )
     )
     fig.update_layout(barmode="group")
-    fig.update_xaxes(title="Mean score", range=[0, 1.12])
+    values = [value for value in baseline + candidate if value is not None]
+    fig.update_xaxes(title="Mean value", range=[0, 1.12] if values and max(values) <= 1 else None)
     return _base_layout(fig, height=360)
 
 

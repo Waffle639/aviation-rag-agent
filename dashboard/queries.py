@@ -2,23 +2,15 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
 from dashboard.database import DatabasePool
 
 
-QUALITY_METRICS = {
-    "recall_at_3",
-    "precision_at_3",
-    "hit_rate_at_3",
-    "ndcg_at_3",
-    "recall_at_5",
-    "precision_at_5",
-    "hit_rate_at_5",
-    "ndcg_at_5",
-    "mrr",
-}
+_DYNAMIC_METRIC_RE = re.compile(r"^(recall|precision|hit_rate|ndcg)_at_([1-9][0-9]*)$")
+QUALITY_METRICS = {"mrr"}
 EFFICIENCY_METRICS = {
     "unique_parent_ratio",
     "duplicate_ratio",
@@ -38,12 +30,19 @@ CONFIG_ALLOWLIST = {
     "model",
     "generator_model",
     "embedding_model",
+    "max_context_chars",
+    "max_output_tokens",
+    "rag_security",
+    "relevance_threshold",
+    "retrieval_evaluator_version",
+    "corpus_manifest_sha256",
     "evaluator_version",
 }
 MODEL_ALLOWLIST = {
     "model",
     "generator_model",
     "embedding_model",
+    "prompt_guard_model",
     "retrieval_model",
     "evaluator_model",
 }
@@ -63,32 +62,92 @@ class MetricDefinition:
     label: str
     direction: str
     unit: str = "score"
+    description: str = ""
 
 
 METRIC_DEFINITIONS = {
-    "recall_at_5": MetricDefinition("recall_at_5", "Recall@5", "maximize"),
-    "mrr": MetricDefinition("mrr", "MRR", "maximize"),
-    "ndcg_at_5": MetricDefinition("ndcg_at_5", "nDCG@5", "maximize"),
-    "hit_rate_at_5": MetricDefinition("hit_rate_at_5", "HitRate@5", "maximize"),
-    "recall_at_3": MetricDefinition("recall_at_3", "Recall@3", "maximize"),
-    "precision_at_3": MetricDefinition("precision_at_3", "Precision@3", "maximize"),
-    "precision_at_5": MetricDefinition("precision_at_5", "Precision@5", "maximize"),
-    "hit_rate_at_3": MetricDefinition("hit_rate_at_3", "HitRate@3", "maximize"),
-    "ndcg_at_3": MetricDefinition("ndcg_at_3", "nDCG@3", "maximize"),
-    "unique_parent_ratio": MetricDefinition(
-        "unique_parent_ratio", "Unique parent ratio", "maximize"
+    "mrr": MetricDefinition(
+        "mrr",
+        "MRR",
+        "maximize",
+        description="Shows how high the first correct result appears. Rank 1 scores 1, rank 2 scores 0.5, and no hit scores 0.",
     ),
-    "duplicate_ratio": MetricDefinition("duplicate_ratio", "Duplicate ratio", "minimize"),
-    "retrieved_items": MetricDefinition("retrieved_items", "Retrieved items", "tradeoff", "count"),
-    "retrieved_tokens": MetricDefinition("retrieved_tokens", "Retrieved tokens", "tradeoff", "tokens"),
+    "unique_parent_ratio": MetricDefinition(
+        "unique_parent_ratio", "Unique parent ratio", "maximize",
+        description="Share of results coming from different parent chunks. It is parent chunks divided by retrieved results."
+    ),
+    "duplicate_ratio": MetricDefinition("duplicate_ratio", "Duplicate ratio", "minimize", description="Share of repeated parent chunks. It is 1 minus unique parent ratio; lower is better."),
+    "retrieved_items": MetricDefinition("retrieved_items", "Retrieved items", "tradeoff", "count", description="Number of results retrieved per question. It checks the actual top_k budget, but it is not a quality score."),
+    "retrieved_tokens": MetricDefinition("retrieved_tokens", "Retrieved tokens", "tradeoff", "tokens", description="Estimated tokens in retrieved results. Fewer tokens reduce cost, but may remove needed evidence."),
 }
 
 
 def is_public_metric(metric_name: str) -> bool:
-    return metric_name in PUBLIC_METRICS
+    return metric_name in PUBLIC_METRICS or bool(_DYNAMIC_METRIC_RE.fullmatch(metric_name))
+
+
+def public_metric_sql_filter(alias: str = "") -> str:
+    prefix = f"{alias}." if alias else ""
+    return (
+        f"({prefix}metric_name = any(%s) or "
+        f"{prefix}metric_name ~ '^(recall|precision|hit_rate|ndcg)_at_[1-9][0-9]*$')"
+    )
+
+
+def run_top_k(run: Mapping[str, Any] | None) -> int | None:
+    if not isinstance(run, Mapping):
+        return None
+    for source in (run.get("config"), run.get("public_config"), run):
+        if isinstance(source, Mapping):
+            value = source.get("top_k") or source.get("retrieval_top_k")
+            if value is not None:
+                try:
+                    number = int(value)
+                except (TypeError, ValueError):
+                    return None
+                return number if number > 0 else None
+    value = run.get("raw_top_k")
+    try:
+        number = int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+    return number if number and number > 0 else None
+
+
+def display_metrics_for_run(run: Mapping[str, Any] | None) -> tuple[str, ...]:
+    top_k = run_top_k(run) or 5
+    return (f"recall_at_{top_k}", "mrr", f"ndcg_at_{top_k}", f"hit_rate_at_{top_k}")
+
+
+def concept_metric(metric_concept: str, run: Mapping[str, Any] | None) -> str:
+    top_k = run_top_k(run) or 5
+    if metric_concept in {"recall", "precision", "hit_rate", "ndcg"}:
+        return f"{metric_concept}_at_{top_k}"
+    return metric_concept
 
 
 def metric_definition(metric_name: str) -> MetricDefinition:
+    match = _DYNAMIC_METRIC_RE.fullmatch(metric_name)
+    if match:
+        metric_type, k = match.groups()
+        labels = {
+            "recall": "Recall",
+            "precision": "Precision",
+            "hit_rate": "HitRate",
+            "ndcg": "nDCG",
+        }
+        descriptions = {
+            "recall": f"Share of expected relevant information found in the first {k} results. It is found relevant documents divided by expected relevant documents.",
+            "precision": f"Share of correct results among the first {k}. It increases when less irrelevant context is retrieved.",
+            "hit_rate": f"Checks whether at least one correct result appears in the first {k}. Each question scores 1 for a hit and 0 for no hit.",
+            "ndcg": f"Checks whether the most relevant results appear first within {k}. It compares your ranking with the ideal ranking.",
+        }
+        return MetricDefinition(
+            metric_name,
+            f"{labels[metric_type]}@{k}",
+            "maximize",
+            description=descriptions[metric_type],
+        )
     return METRIC_DEFINITIONS.get(
         metric_name, MetricDefinition(metric_name, metric_name.replace("_", " ").title(), "maximize")
     )
@@ -127,7 +186,7 @@ class EvaluationRepository:
     def list_datasets(self) -> list[dict[str, Any]]:
         with self._pool.cursor() as cursor:
             cursor.execute(
-                """
+                f"""
                 select
                     d.dataset_id,
                     d.name,
@@ -161,7 +220,7 @@ class EvaluationRepository:
     def list_dashboard_runs(self) -> list[dict[str, Any]]:
         with self._pool.cursor() as cursor:
             cursor.execute(
-                """
+                f"""
                 with expected as (
                     select dataset_id, count(*) as expected_cases
                     from evaluation.cases
@@ -171,7 +230,12 @@ class EvaluationRepository:
                     select
                         run_id,
                         count(*) as executed_cases,
-                        avg(latency_ms) as avg_latency_ms
+                        avg(latency_ms) as avg_latency_ms,
+                        case
+                            when min((raw_output->'metadata'->>'top_k')::int) = max((raw_output->'metadata'->>'top_k')::int)
+                            then min((raw_output->'metadata'->>'top_k')::int)
+                            else null
+                        end as raw_top_k
                     from evaluation.case_runs
                     group by run_id
                 )
@@ -188,9 +252,11 @@ class EvaluationRepository:
                     r.ended_at,
                     r.corpus_version,
                     r.prompt_version,
+                    r.config,
                     e.expected_cases,
                     coalesce(cs.executed_cases, 0) as executed_cases,
-                    cs.avg_latency_ms
+                    cs.avg_latency_ms,
+                    cs.raw_top_k
                 from evaluation.runs r
                 join evaluation.datasets d using (dataset_id)
                 left join expected e using (dataset_id)
@@ -198,12 +264,17 @@ class EvaluationRepository:
                 order by r.started_at desc, r.run_name
                 """
             )
-            return _rows(cursor.fetchall())
+            rows = _rows(cursor.fetchall())
+        for row in rows:
+            row["public_config"] = public_config(row.get("config"))
+            row["top_k"] = run_top_k(row)
+            row.pop("config", None)
+        return rows
 
     def list_runs(self, dataset_id: str) -> list[dict[str, Any]]:
         with self._pool.cursor() as cursor:
             cursor.execute(
-                """
+                f"""
                 with expected as (
                     select dataset_id, count(*) as expected_cases
                     from evaluation.cases
@@ -245,7 +316,7 @@ class EvaluationRepository:
     def get_run_summary(self, run_id: str) -> dict[str, Any] | None:
         with self._pool.cursor() as cursor:
             cursor.execute(
-                """
+                f"""
                 with expected as (
                     select dataset_id, count(*) as expected_cases
                     from evaluation.cases
@@ -264,7 +335,12 @@ class EvaluationRepository:
                         sum(output_tokens) as output_tokens,
                         sum(context_tokens) as context_tokens,
                         sum(estimated_cost) as known_cost,
-                        count(estimated_cost) as cost_samples
+                        count(estimated_cost) as cost_samples,
+                        case
+                            when min((raw_output->'metadata'->>'top_k')::int) = max((raw_output->'metadata'->>'top_k')::int)
+                            then min((raw_output->'metadata'->>'top_k')::int)
+                            else null
+                        end as raw_top_k
                     from evaluation.case_runs
                     group by run_id
                 )
@@ -296,6 +372,7 @@ class EvaluationRepository:
         data = dict(row)
         data["public_config"] = public_config(data.get("config"))
         data["public_model_versions"] = public_model_versions(data.get("model_versions"))
+        data["top_k"] = run_top_k(data)
         data.pop("config", None)
         data.pop("model_versions", None)
         return data
@@ -303,7 +380,7 @@ class EvaluationRepository:
     def get_metric_summary(self, run_id: str) -> list[dict[str, Any]]:
         with self._pool.cursor() as cursor:
             cursor.execute(
-                """
+                f"""
                 select
                     metric_name,
                     evaluator_version,
@@ -313,7 +390,7 @@ class EvaluationRepository:
                     max(score) as max_score
                 from evaluation.metrics
                 where run_id = %s
-                  and metric_name = any(%s)
+                  and {public_metric_sql_filter()}
                   and (
                       metric_name in ('duplicate_ratio', 'unique_parent_ratio', 'retrieved_items', 'retrieved_tokens')
                       or coalesce((details->>'qrels_count')::int, 0) > 0
@@ -330,7 +407,7 @@ class EvaluationRepository:
             raise ValueError("Unsupported public metric")
         with self._pool.cursor() as cursor:
             cursor.execute(
-                """
+                f"""
                 select
                     r.run_id,
                     r.run_name,
@@ -362,7 +439,7 @@ class EvaluationRepository:
             raise ValueError("Unsupported public metric")
         with self._pool.cursor() as cursor:
             cursor.execute(
-                """
+                f"""
                 with metric_stats as (
                     select
                         run_id,
@@ -414,15 +491,15 @@ class EvaluationRepository:
     def compare_runs(self, baseline_run_id: str, candidate_run_id: str) -> list[dict[str, Any]]:
         with self._pool.cursor() as cursor:
             cursor.execute(
-                """
+                f"""
                 with baseline as (
                     select case_id, metric_name, evaluator_version, score
                     from evaluation.metrics
-                    where run_id = %s and metric_name = any(%s)
+                    where run_id = %s and {public_metric_sql_filter()}
                 ), candidate as (
                     select case_id, metric_name, evaluator_version, score
                     from evaluation.metrics
-                    where run_id = %s and metric_name = any(%s)
+                    where run_id = %s and {public_metric_sql_filter()}
                 ), paired as (
                     select
                         c.case_id,
@@ -521,7 +598,7 @@ class EvaluationRepository:
                 left join evaluation.metrics b
                   on b.run_id = %s
                  and b.case_id = cr.case_id
-                 and b.metric_name = %s
+                  and b.metric_name = %s
                  and b.evaluator_version = m.evaluator_version
                 where cr.run_id = %s
                 order by
@@ -580,12 +657,27 @@ class EvaluationRepository:
                 """
                 select metric_name, score, evaluator_version, details
                 from evaluation.metrics
-                where run_id = %s and case_id = %s and metric_name = any(%s)
+                where run_id = %s and case_id = %s and {public_metric_sql_filter()}
                 order by metric_name
                 """,
                 (run_id, case_id, list(PUBLIC_METRICS)),
             )
             return _rows(cursor.fetchall())
+
+    def delete_run(self, run_id: str) -> bool:
+        with self._pool.cursor(readonly=False) as cursor:
+            cursor.execute(
+                "select status from evaluation.runs where run_id = %s for update",
+                (run_id,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return False
+            if row.get("status") == "running":
+                raise ValueError("Cannot delete a running evaluation.")
+            cursor.execute("delete from evaluation.feedback where run_id = %s", (run_id,))
+            cursor.execute("delete from evaluation.runs where run_id = %s", (run_id,))
+            return cursor.rowcount == 1
 
     def get_evidence(self, case_id: str) -> list[dict[str, Any]]:
         with self._pool.cursor() as cursor:

@@ -185,6 +185,34 @@ def test_run_evaluation_persists_run_cases_and_trace_items():
     assert case_run_params[1][4] == seen_extras[1]["run_id"]
 
 
+def test_run_evaluation_uses_configured_top_k_for_metric_cutoffs():
+    connection = FakeConnection(
+        [("av_0001", "Question one?")],
+        qrels={"av_0001": [("boeing_747_wiki", "boeing_747_wiki_p001", None, 3)]},
+    )
+
+    def target(question, langsmith_extra=None):
+        result = _sample_result(question)
+        result.metadata["top_k"] = 3
+        return result
+
+    run_evaluation(
+        connection,
+        dataset_id="aviation_golden_v1",
+        run_name="top-k-3",
+        target=target,
+        config={"top_k": 3, "k_values": [3]},
+    )
+
+    metric_params = [
+        params for statement, params in connection.cursor_instance.calls
+        if statement.startswith("insert into evaluation.metrics")
+    ]
+    metric_names = {params[3] for params in metric_params}
+    assert "recall_at_3" in metric_names
+    assert "recall_at_5" not in metric_names
+
+
 def test_run_evaluation_rejects_document_level_qrels_without_retrieved_document_id():
     connection = FakeConnection(
         [("av_0001", "Question one?")],

@@ -23,13 +23,15 @@ class DatabasePool:
         )
 
     @contextmanager
-    def cursor(self) -> Iterator[RealDictCursor]:
+    def cursor(self, readonly: bool = True) -> Iterator[RealDictCursor]:
         connection = self._pool.getconn()
-        connection.set_session(readonly=True, autocommit=True)
+        connection.set_session(readonly=readonly, autocommit=readonly)
         try:
             with connection.cursor(cursor_factory=RealDictCursor) as cursor:
                 yield cursor
-        except psycopg2.Error:
+            if not readonly:
+                connection.commit()
+        except Exception:
             connection.rollback()
             raise
         finally:

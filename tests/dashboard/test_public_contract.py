@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from dashboard.queries import (
     DISPLAY_METRICS,
+    concept_metric,
+    display_metrics_for_run,
     public_config,
     public_model_versions,
     is_public_metric,
     metric_definition,
     normalized_delta,
+    run_top_k,
 )
 
 
@@ -30,6 +33,7 @@ def test_public_model_versions_filters_unknown_fields() -> None:
         {
             "generator_model": "gpt-test",
             "embedding_model": "embed-test",
+            "prompt_guard_model": "guard-test",
             "langsmith_project": "private-project",
             "trace_url": "https://example.test/trace",
         }
@@ -38,6 +42,7 @@ def test_public_model_versions_filters_unknown_fields() -> None:
     assert filtered == {
         "generator_model": "gpt-test",
         "embedding_model": "embed-test",
+        "prompt_guard_model": "guard-test",
     }
 
 
@@ -51,3 +56,20 @@ def test_display_metrics_are_public_and_named() -> None:
     for metric_name in DISPLAY_METRICS:
         assert is_public_metric(metric_name)
         assert metric_definition(metric_name).label
+
+
+def test_dynamic_metric_names_are_public_and_described() -> None:
+    assert is_public_metric("recall_at_7")
+    assert is_public_metric("ndcg_at_12")
+    assert not is_public_metric("recall_at_0")
+    assert not is_public_metric("unsafe_metric")
+    assert metric_definition("recall_at_7").label == "Recall@7"
+    assert metric_definition("recall_at_7").description
+
+
+def test_display_metrics_follow_run_top_k() -> None:
+    run = {"public_config": {"top_k": 3}}
+
+    assert run_top_k(run) == 3
+    assert display_metrics_for_run(run) == ("recall_at_3", "mrr", "ndcg_at_3", "hit_rate_at_3")
+    assert concept_metric("recall", run) == "recall_at_3"

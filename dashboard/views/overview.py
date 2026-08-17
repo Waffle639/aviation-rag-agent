@@ -8,18 +8,14 @@ import streamlit as st
 
 from dashboard import charts
 from dashboard.components import alert, kpi_card, panel_title
-from dashboard.queries import DISPLAY_METRICS, metric_definition
+from dashboard.queries import display_metrics_for_run, metric_definition
 
 
 def _metric_map(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return {row["metric_name"]: row for row in rows}
 
 
-def _comparison_map(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    return {row["metric_name"]: row for row in rows}
-
-
-def render(repo, dataset_id: str, run_id: str, baseline_run_id: str | None) -> None:
+def render(repo, dataset_id: str, run_id: str) -> None:
     summary = repo.get_run_summary(run_id)
     if not summary:
         alert("Selected run was not found.")
@@ -35,22 +31,19 @@ def render(repo, dataset_id: str, run_id: str, baseline_run_id: str | None) -> N
         alert(f"Only {executed} of {expected} expected cases are available.")
 
     metrics = _metric_map(repo.get_metric_summary(run_id))
-    comparison = _comparison_map(repo.compare_runs(baseline_run_id, run_id)) if baseline_run_id else {}
+    display_metrics = display_metrics_for_run(summary)
 
     cols = st.columns(4)
-    for column, metric_name in zip(cols, DISPLAY_METRICS):
+    for column, metric_name in zip(cols, display_metrics):
         metric = metrics.get(metric_name, {})
-        delta = comparison.get(metric_name, {}).get("mean_delta")
-        normalized = comparison.get(metric_name, {}).get("normalized_delta")
         definition = metric_definition(metric_name)
         with column:
             kpi_card(
                 definition.label,
                 metric.get("mean_score"),
-                delta=delta,
                 unit="percent" if metric_name.startswith(("recall", "hit_rate")) else "score",
                 sample_count=metric.get("sample_count"),
-                normalized_delta=normalized,
+                description=definition.description,
             )
 
     st.write("")
@@ -59,7 +52,7 @@ def render(repo, dataset_id: str, run_id: str, baseline_run_id: str | None) -> N
         panel_title("Quality trend")
         history_metric = st.selectbox(
             "Trend metric",
-            DISPLAY_METRICS,
+            display_metrics,
             index=1,
             format_func=lambda name: metric_definition(name).label,
             label_visibility="collapsed",
@@ -67,7 +60,7 @@ def render(repo, dataset_id: str, run_id: str, baseline_run_id: str | None) -> N
         history = repo.get_metric_history(dataset_id, history_metric)
         if history:
             st.plotly_chart(
-                charts.metric_history(history, history_metric, run_id, baseline_run_id),
+                    charts.metric_history(history, history_metric, run_id),
                 use_container_width=True,
             )
         else:
@@ -79,7 +72,7 @@ def render(repo, dataset_id: str, run_id: str, baseline_run_id: str | None) -> N
         if quality_latency:
             st.plotly_chart(
                 charts.quality_latency_scatter(
-                    quality_latency, history_metric, run_id, baseline_run_id
+                    quality_latency, history_metric, run_id
                 ),
                 use_container_width=True,
             )
@@ -104,29 +97,6 @@ def render(repo, dataset_id: str, run_id: str, baseline_run_id: str | None) -> N
         resource_cols[1].metric("Output tokens", _count(summary.get("output_tokens")))
         resource_cols[0].metric("Context tokens", _count(summary.get("context_tokens")))
         resource_cols[1].metric("Known cost", _cost(summary.get("known_cost")))
-
-    panel_title("Largest regressions")
-    if baseline_run_id:
-        cases = repo.list_case_results(run_id, baseline_run_id, "mrr")[:8]
-        st.dataframe(
-            [
-                {
-                    "case_id": row["case_id"],
-                    "category": row["category"],
-                    "difficulty": row["difficulty"],
-                    "baseline": row.get("baseline_score"),
-                    "candidate": row.get("candidate_score"),
-                    "delta": row.get("delta"),
-                    "question": row.get("question"),
-                }
-                for row in cases
-            ],
-            use_container_width=True,
-            hide_index=True,
-        )
-    else:
-        st.caption("Select a baseline run to show regressions.")
-
 
 def _latency(value: Any) -> str:
     if value is None:

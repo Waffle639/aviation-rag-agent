@@ -16,6 +16,30 @@ from rag.result import RAGResult
 
 
 RETRIEVAL_EVALUATOR_VERSION = "deterministic-retrieval-v1"
+RELEVANCE_THRESHOLD = 2
+
+
+def _positive_int(value: Any, name: str) -> int:
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be a positive integer")
+    try:
+        number = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be a positive integer") from exc
+    if number <= 0:
+        raise ValueError(f"{name} must be a positive integer")
+    return number
+
+
+def _metric_k_values(config: dict[str, Any]) -> tuple[int, ...]:
+    if "k_values" in config:
+        values = config["k_values"]
+        if isinstance(values, (str, bytes)) or not isinstance(values, list | tuple):
+            raise ValueError("k_values must be a list of positive integers")
+        return tuple(_positive_int(value, "k_values") for value in values)
+    if "top_k" in config:
+        return (_positive_int(config["top_k"], "top_k"),)
+    return (3, 5, 10)
 
 
 def _run_id(run_name: str) -> str:
@@ -240,6 +264,8 @@ def run_evaluation(
     run_id = _run_id(run_name)
     config = config or {}
     model_versions = model_versions or {}
+    k_values = _metric_k_values(config)
+    expected_top_k = _positive_int(config["top_k"], "top_k") if "top_k" in config else None
 
     with connection.cursor() as cursor:
         _insert_run(
@@ -284,6 +310,12 @@ def run_evaluation(
                     model_versions,
                 )
                 result = target(question, langsmith_extra=langsmith_extra)
+                actual_top_k = result.metadata.get("top_k")
+                if expected_top_k is not None and actual_top_k != expected_top_k:
+                    raise ValueError(
+                        "Configured top_k does not match the executed RAG result "
+                        f"for case {case_id}: expected {expected_top_k}, got {actual_top_k}."
+                    )
                 if qrels and result.retrieved_items and any(
                     not item.get("document_id") for item in result.retrieved_items
                 ):
@@ -295,14 +327,24 @@ def run_evaluation(
                 result.metadata["langsmith_name"] = langsmith_extra["name"]
                 case_run_id = _insert_case_result(cursor, run_id, case_id, result)
                 _insert_items(cursor, case_run_id, result)
-                metrics = evaluate_retrieval(_retrieved_items_for_metrics(result), qrels)
+                metrics = evaluate_retrieval(
+                    _retrieved_items_for_metrics(result),
+                    qrels,
+                    k_values=k_values,
+                    relevance_threshold=RELEVANCE_THRESHOLD,
+                )
                 _insert_metrics(
                     cursor,
                     run_id,
                     case_run_id,
                     case_id,
                     metrics,
-                    {"qrels_count": len(qrels), "relevance_threshold": 2},
+                    {
+                        "qrels_count": len(qrels),
+                        "relevance_threshold": RELEVANCE_THRESHOLD,
+                        "top_k": expected_top_k,
+                        "k_values": list(k_values),
+                    },
                 )
 
             cursor.execute(
@@ -355,7 +397,36 @@ def main() -> None:
     if not database_url or "YOUR-PASSWORD" in database_url:
         raise SystemExit("DATABASE_URL is missing or still contains the placeholder.")
 
-    from rag.generator import MODEL_NAME, generate_result
+    from evaluation.manifest import DEFAULT_OUTPUT
+    from ingestion.embedder import EMBEDDING_MODEL
+    from rag.generator import K_TOP, MODEL_NAME, generate_result
+    from rag.guardrails import (
+        MAX_CONTEXT_CHARS,
+        MAX_OUTPUT_TOKENS,
+        PROMPT_GUARD_MODEL,
+        RAG_SECURITY,
+    )
+
+    config = {
+        "top_k": K_TOP,
+        "k_values": [K_TOP],
+        "max_context_chars": MAX_CONTEXT_CHARS,
+        "max_output_tokens": MAX_OUTPUT_TOKENS,
+        "rag_security": RAG_SECURITY,
+        "relevance_threshold": RELEVANCE_THRESHOLD,
+        "retrieval_evaluator_version": RETRIEVAL_EVALUATOR_VERSION,
+    }
+    if DEFAULT_OUTPUT.exists():
+        import json
+
+        manifest = json.loads(DEFAULT_OUTPUT.read_text(encoding="utf-8"))
+        config["corpus_manifest_sha256"] = manifest.get("manifest_sha256")
+
+    model_versions = {
+        "generator_model": MODEL_NAME,
+        "embedding_model": EMBEDDING_MODEL,
+        "prompt_guard_model": PROMPT_GUARD_MODEL,
+    }
 
     connection = psycopg2.connect(database_url)
     try:
@@ -365,7 +436,9 @@ def main() -> None:
             run_name=args.run_name,
             run_type=args.run_type,
             target=generate_result,
-            model_versions={"generation": MODEL_NAME},
+            config=config,
+            corpus_version=config.get("corpus_manifest_sha256"),
+            model_versions=model_versions,
         )
     finally:
         connection.close()
