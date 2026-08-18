@@ -1,153 +1,173 @@
 # Aviation RAG Agent
 
-A RAG system that answers technical questions about aircraft using official manuals and spec sheets. Built from scratch — no LangChain abstractions — so every layer of the stack (ingestion, chunking, embeddings, vector search, grounded generation) is an explicit, observable decision.
-
-## Pipeline
-
-```
-PDF manuals + Wikipedia extracts
-        ↓
-cleaning and parent-child chunking
-        ↓
-embeddings + tsvector generation
-        ↓
-Supabase + pgvector (HNSW) + GIN full-text index
-        ↓
-hybrid search (vector + keyword, RRF fusion) → dedupe → parents
-        ↓
-grounded generation with citations + guardrails
+```mermaid
+flowchart LR
+    A[Manuals and extracts] --> B[Clean and track provenance]
+    B --> C[Parent / child chunks]
+    C --> D[Embeddings and full-text index]
+    D --> E[Hybrid search]
+    E --> F[Parent context]
+    F --> G[Grounded answer]
 ```
 
-## Setup
+This is not primarily a package for someone to download and run. It is a working case study: every important layer is implemented explicitly so that retrieval quality, context selection, latency and failure modes can be inspected instead of hidden behind a framework.
+
+The corpus combines aircraft manuals, specification sheets and curated aviation extracts. The system answers technical questions with source-aware context, citations and an explicit abstention path when the evidence is missing.
+
+## Why this project exists
+
+The interesting problem is not generating fluent aviation text. It is deciding whether the answer is supported by the right evidence, then being able to explain why a change improved or damaged the system.
+
+That leads to four design priorities:
+
+- **Retrieval before generation:** improve the evidence path before tuning the prompt or model.
+- **Context with structure:** search small units for precision, but give the model enough surrounding material to understand the fact.
+- **Evaluation as a first-class system:** every experiment is stored, reproducible and comparable against a baseline.
+- **Visibility over convenience:** the database, traces and dashboard preserve what happened at each stage.
+
+The main path is deliberately small:
+
+| Stage | What happens | Why it matters |
+| --- | --- | --- |
+| **Ingest** | PDFs and text extracts are cleaned, normalised and assigned stable provenance. | A result can be traced back to a document and source file. |
+| **Structure** | Each document becomes larger `parent` windows and overlapping smaller `child` chunks. | Matching stays precise without starving generation of context. |
+| **Index** | Child chunks receive embeddings; PostgreSQL builds a generated `tsvector` and GIN index. | Semantic and exact-term retrieval are available from the same corpus. |
+| **Retrieve** | Vector and keyword rankings are fused with Reciprocal Rank Fusion, then collapsed to unique parents. | Exact aviation tokens and semantic questions can both succeed. |
+| **Generate** | The model sees only selected parent context and must cite the aircraft and source. | The answer remains grounded and auditable. |
+| **Evaluate** | Runs persist rankings, context, answers, timings, tokens and metrics. | A change can be judged by evidence, not by a convincing demo query. |
+
+## Decisions that shape the system
+
+### 1. Parent-child chunking
+
+Chunking is implemented in `ingestion/chunking.py`, rather than delegated to a framework splitter.
+
+```text
+document
+  -> paragraph-aligned parents      ~2,000 characters
+  -> overlapping searchable children ~500 characters, 100 overlap
+```
+
+Children are embedded because small passages give more focused matches. Parents are not embedded; they are the richer context returned to the model. In short: **search small, return big**.
+
+This also makes retrieval measurable at two levels: whether the right child was found, and whether the final parent context was useful without repeating the same document several times.
+
+### 2. Hybrid search instead of vector-only search
+
+Vector similarity is good at meaning, but it can underweight exact identifiers and aviation notation such as `V1`, `Vso`, model variants or part numbers. PostgreSQL therefore runs two independent retrieval legs:
+
+- HNSW over `text-embedding-3-small` vectors.
+- GIN full-text search over a generated English `tsvector` column.
+
+The database function `find_similar_parents_hybrid` fuses ranks with:
+
+```text
+RRF(parent) = sum(1 / (60 + rank))
+```
+
+Rank fusion avoids putting cosine distance and keyword scores on an arbitrary shared scale. It also keeps the retrieval contract in the database, close to the indexes, rather than scattering ranking logic through application code.
+
+### 3. Idempotent, observable ingestion
+
+Stable document, parent and child IDs make ingestion safe to repeat. Children and parents are upserted separately, embedding calls run in batches, API and database operations retry with backoff, and failed child IDs are reported for selective re-runs.
+
+Before indexing, every child is scanned for prompt injection. Suspicious or unscannable material blocks ingestion and is logged for review rather than silently discarded. This matters for technical documents because a false positive may still contain legitimate operational language.
+
+### 4. Grounded generation with an abstention path
+
+The generator receives retrieved context inside explicit data boundaries. Its contract is intentionally conservative:
+
+- use only the supplied context;
+- cite the aircraft and source;
+- report conflicting values instead of choosing silently;
+- preserve numeric precision;
+- return `I don't have that information in my sources.` when the corpus does not support an answer.
+
+Input validation, local Prompt Guard, OpenAI moderation and output leak checks form a fail-closed defence in depth. Security is applied when untrusted text enters the system: both at ingestion and at query time.
+
+## Evaluation is the decision loop
+
+The project treats evaluation as infrastructure, not as a final report. The runner executes the same RAG path used by the application and persists the complete evidence chain for every case.
+
+```mermaid
+flowchart LR
+    A[Golden cases] --> B[Run the RAG]
+    B --> C[Persist evidence and metrics]
+    C --> D[Compare with baseline]
+    D --> E[Dashboard]
+    E --> A
+```
+
+The first dataset, `aviation_golden_v1`, contains 36 English cases built from the downloaded sources, including an explicit out-of-corpus question. Golden answers and evidence live in the separate `evaluation` PostgreSQL schema; they never become searchable RAG context.
+
+The deterministic retrieval layer currently tracks:
+
+- `Recall@k`, `Precision@k`, `HitRate@k`, `MRR` and `nDCG@k`;
+- duplicate ratio and unique-parent ratio;
+- retrieved item count and estimated retrieved tokens;
+- latency, input/output/context tokens and recorded cost;
+- abstention decisions and the generated answer for each case.
+
+This separation helps answer two different questions:
+
+1. **Did retrieval find the right evidence, and how high did it rank?**
+2. **What did the model actually receive, and what did it produce?**
+
+Generation metrics such as citation correctness, faithfulness and answer correctness can be added on top of this deterministic baseline without losing the underlying retrieval evidence. LangSmith adds a visual trace for each evaluated case and its trace ID is stored with the database result.
+
+## The dashboard
+
+`Aviation RAG Evaluations` is a read-only Streamlit surface for inspecting decisions, not a generic chat demo. It exposes three useful views:
+
+| View | What it answers |
+| --- | --- |
+| **Overview** | Is the run healthy? How are quality, latency and resource usage trending? |
+| **Run Comparison** | Did a candidate beat the baseline, and what was the trade-off in context, cost or latency? |
+| **Case Explorer** | Which question changed, what evidence was golden, what was retrieved and what context reached generation? |
+
+The dashboard automatically chooses a compatible baseline from the same dataset. Comparisons also surface mismatches in corpus, prompt version and retrieval budget, because a raw score delta is misleading when the experiment changed more than one variable.
+
+## Repository map
+
+```text
+ingestion/       document cleaning, parent-child chunking and embedding/upsert
+rag/             retrieval, generation, guardrails and structured results
+evaluation/      dataset runner, manifest handling and deterministic metrics
+dashboard/       read-only Streamlit views over persisted evaluation runs
+db/              pgvector, full-text search and evaluation schema
+data/raw/        source manuals, PDF text extracts and aviation extracts
+tests/           unit, integration and end-to-end coverage
+```
+
+The implementation intentionally avoids LangChain abstractions for the core path. LangSmith is used where it adds value: tracing and visual inspection of runs.
+
+## Running the project
+
+Operational setup is intentionally kept secondary to the design. For maintainers who want to reproduce the pipeline:
 
 ```bash
-python configure.py  # guided setup: database, local security model, smoke test
+python configure.py
 ```
 
-One command handles everything. Configuration lives in `.env` (see `.env.example`).
-
-## Design decisions
-
-**Parent-child chunking.** Small children (~500 chars) are embedded for precise matching; their paragraph-aligned parents (~2000 chars) are what the model actually sees. Search small, return big.
-
-**Hybrid search (vector + keyword, RRF).** Pure vector search loses exact tokens like "Vso" or "V1". HNSW handles semantic similarity, a GIN full-text index handles lexical matching, and Reciprocal Rank Fusion merges both by rank position — no score normalisation needed. The RRF logic lives as a PostgreSQL function (`find_similar_parents_hybrid`), so the fusion happens inside the database, not in application code.
-
-**HNSW over IVFFlat.** Better recall, no training step — and no degraded index while the table is still empty.
-
-**Idempotent ingestion.** Stable chunk IDs and upserts: re-running the pipeline never duplicates or re-embeds. API failures retry with backoff; failed batches are reported by ID for selective retries.
-
-**Grounded generation.** The model answers only from retrieved context, cites aircraft and source, reports discrepancies between sources instead of silently picking one — and says "I don't have that information" when the data isn't there.
-
-## Security
-
-- **Local prompt-injection detector.** Meta's Prompt Guard 2 runs on CPU — questions never leave the machine, and its ~100ms is invisible next to generation. The same classifier scans user questions at query time and every chunk at ingestion: defense at the two points where untrusted text enters the system.
-- **Fine-tuned on aviation data.** The base model knows generic injection patterns. A fine-tuned variant (`models/prompt-guard-aviation/`) tightens the decision boundary for this domain — see `notebooks/finetune_prompt_guard.ipynb`.
-- **Defense in depth.** OpenAI Moderation screens both input and output, the prompt treats retrieved context strictly as data (never instructions), and answers are scanned for system-prompt leaks.
-- **Fail-closed, human in the loop.** Guardrails gate behind a single switch (`RAG_SECURITY`, on by default); at query time a missing detector raises instead of silently degrading. Flagged ingestion chunks are logged for human review, never auto-deleted — aviation documents produce false positives.
-
-## Tests
-
-Unit, integration and e2e tests covering chunking logic, guardrail behaviour and the full query pipeline. Run with `pytest`.
-
-## Evaluation
-
-Evaluation is baseline-first and DB-backed. Golden questions, expected answers
-and evidence live in a separate `evaluation` PostgreSQL schema, never in the RAG
-corpus tables. That separation matters: evaluation data is ground truth, not
-retrievable context.
-
-The initial dataset, `aviation_golden_v1`, contains 36 English cases built from
-the downloaded TXT sources, including one explicit out-of-corpus question. A
-corpus manifest records source files and hashes so a run can be tied back to the
-exact documents it evaluated against.
-
-The first goal is retrieval quality. For each case, evidence rows are converted
-into qrels and compared with the ranked results returned by hybrid search. The
-deterministic metrics currently tracked are `Recall@k`, `Precision@k`,
-`HitRate@k`, `MRR`, `nDCG@k`, duplicate ratio, unique parent ratio, retrieved
-item count and retrieved token count. These answer questions like: did we find
-the right source, how high did it rank, and how much irrelevant context did we
-send to generation?
-
-The second goal is run observability. Each evaluated case stores the generated
-answer, abstention decision, retrieved ranking, selected context, estimated
-context tokens, model input/output tokens, latency and raw structured output.
-This makes quality regressions debuggable instead of just reporting a pass/fail
-score.
-
-PostgreSQL is the source of truth for comparisons. `evaluation.runs` represents
-one experiment, `evaluation.case_runs` stores per-question outputs,
-`evaluation.retrieved_items` and `evaluation.context_items` preserve the evidence
-path, and `evaluation.metrics` stores deterministic scores. Later runs can be
-compared against `baseline-v1` by metric, case type, aircraft, source, latency or
-token usage.
-
-LangSmith is used as the visual trace layer. When tracing is enabled, each case
-appears as `evaluation.<run-name>.<case-id>` with tags for `evaluation`, run
-type, dataset and run name. The same LangSmith trace id is stored in
-`evaluation.case_runs.trace_id`, so a failing DB row can be opened directly as a
-trace showing retrieval, prompt construction, model call and final answer.
-
-The next evaluation layer is generation quality: citation correctness,
-faithfulness to retrieved context, answer correctness, numeric accuracy,
-abstention accuracy and cost/latency trade-offs. Those are intentionally built on
-top of the deterministic baseline instead of replacing it with an LLM judge too
-early.
-
-## Evaluation dashboard
-
-`Aviation RAG Evaluations` is a read-only Streamlit dashboard for comparing
-persisted evaluation runs. It is designed for public demo use: metrics, cases,
-answers, retrieved items and context can be shown, but traces, raw outputs and
-private configuration fields are not exposed.
-
-Install the lightweight dashboard dependencies:
+Configuration lives in `.env`; the expected variables are documented in `.env.example`. The evaluation dashboard has its own lightweight dependencies:
 
 ```bash
 python -m pip install -r dashboard/requirements.txt
-```
-
-Run locally:
-
-```bash
 python -m streamlit run dashboard/app.py
 ```
 
-Required configuration:
+Tests:
 
 ```bash
-DATABASE_URL=postgresql://...
+pytest tests
 ```
 
-For a public deployment, use a dedicated PostgreSQL role with read-only access
-to the `evaluation` schema and require TLS (`sslmode=require`). Do not use the
-owner/admin database user in Streamlit Cloud. Optional settings are
-`DASHBOARD_DB_POOL_MIN`, `DASHBOARD_DB_POOL_MAX`,
-`DASHBOARD_DB_CONNECT_TIMEOUT`, `DASHBOARD_DB_STATEMENT_TIMEOUT_MS` and
-`DASHBOARD_REQUIRE_SSL`.
+## Current boundary and next experiment
 
-The dashboard contains three views:
+The indexed-document path is the core system. A separate NTSB flow is now available for structured accident records, but it is intentionally kept outside the vector corpus. The next architectural step is a routing agent that chooses between manuals, NTSB records or both, followed by generation-quality evaluation with RAGAS-style metrics.
 
-- `Overview`: current run health, KPI cards, metric history, category breakdowns and largest regressions.
-- `Run Comparison`: baseline vs candidate comparison paired by case, metric and evaluator version.
-- `Case Explorer`: question, reference answer, generated answer, public metrics, golden evidence, retrieved ranking and context used.
+## What "done" means here
 
-The user selects a single evaluation run. The dataset is inferred from that run,
-and the dashboard automatically picks the most recent compatible baseline from
-the same dataset. A baseline override is available under an advanced expander,
-but the main demo flow does not require choosing datasets or IDs manually.
+Not an answer that sounds right once.
 
-Known limitation: the dashboard visualizes the evaluation data as stored. Older
-runs may still reflect historical evaluator or qrel identity issues; those runs
-should be treated as exploratory until regenerated with corrected evidence
-targets.
-
-## What's next
-
-- **NTSB as a second source** — accident records via a structured API, a different access pattern than vector search.
-- **Routing agent (LangGraph)** — the question decides the path: manuals, accidents, or both. Explicit graph, no hidden abstractions.
-- **Evaluation with RAGAS** — faithfulness and context recall, to attribute failures to retrieval or generation with numbers, not opinions.
-
-## What "done" looks like
-
-A system that answers questions about specific aircraft, always citing its source, and honest enough to say "I don't have that information" when the data isn't there. That last part is the hard one.
+An answer that is supported by the right source, whose retrieval path can be inspected, whose changes can be compared against a baseline, and that is willing to say when the evidence is not there.
