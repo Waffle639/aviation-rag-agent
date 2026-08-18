@@ -1,6 +1,6 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v --strict-markers --strict-config --cov=ingestion --cov=rag --cov-branch --cov-report=term-missing --cov-fail-under=80"
+addopts = "-v --strict-markers --strict-config --cov=ingestion --cov=rag --cov=ntsb --cov-branch --cov-report=term-missing --cov-fail-under=80"
 markers = [
     "live: tests that call real external services (Supabase, OpenAI, HuggingFace). Enable with --live.",
     "integration_db: tests that require an ephemeral PostgreSQL/pgvector container.",
@@ -11,7 +11,7 @@ filterwarnings = [
 ]
 
 [tool.coverage.run]
-source = ["ingestion", "rag"]
+source = ["ingestion", "rag", "ntsb"]
 branch = true
 
 omit = [
@@ -21,6 +21,7 @@ omit = [
     "ingestion/setup_database.py",
     "rag/hybrid_debug.py",
     "rag/query_test.py",
+    "rag/query_test_ntsb.py",
     "rag/setup_security.py",
 ]
 

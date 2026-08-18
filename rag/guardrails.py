@@ -44,7 +44,13 @@ _detector = None
 def _get_detector():
     global _detector
     if _detector is None and RAG_SECURITY:
-        _detector = PromptGuardDetector(PROMPT_GUARD_MODEL)
+        try:
+            _detector = PromptGuardDetector(PROMPT_GUARD_MODEL)
+        except Exception as exc:
+            raise GuardrailError(
+                "Prompt Guard is not available in the local cache. "
+                "Run 'python -m rag.setup_security' before starting queries."
+            ) from exc
     return _detector
 
 
@@ -55,12 +61,19 @@ class PromptGuardDetector:
     def __init__(self, model_id):
         self.model_id = model_id
 
-        from transformers import AutoTokenizer, pipeline
+        from transformers import AutoModelForSequenceClassification, AutoTokenizer, pipeline
 
-        self._tokenizer = AutoTokenizer.from_pretrained(model_id)
+        self._tokenizer = AutoTokenizer.from_pretrained(
+            model_id,
+            local_files_only=True,
+        )
+        model = AutoModelForSequenceClassification.from_pretrained(
+            model_id,
+            local_files_only=True,
+        )
         self._pipeline = pipeline(
             "text-classification",
-            model=model_id,
+            model=model,
             tokenizer=self._tokenizer,
         )
 

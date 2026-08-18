@@ -1,5 +1,7 @@
 """Adversarial unit tests for Prompt Guard normalization and windowing."""
 
+import sys
+from types import SimpleNamespace
 from unittest import mock
 
 import pytest
@@ -46,6 +48,33 @@ class TestAdversarialNormalization:
 
 
 class TestDetectorClassification:
+    def test_model_and_tokenizer_are_loaded_from_local_cache(self, monkeypatch):
+        tokenizer = mock.Mock()
+        model = mock.Mock()
+        pipeline = mock.Mock()
+        transformers = SimpleNamespace(
+            AutoModelForSequenceClassification=SimpleNamespace(
+                from_pretrained=mock.Mock(return_value=model)
+            ),
+            AutoTokenizer=SimpleNamespace(
+                from_pretrained=mock.Mock(return_value=tokenizer)
+            ),
+            pipeline=pipeline,
+        )
+        monkeypatch.setitem(sys.modules, "transformers", transformers)
+
+        PromptGuardDetector("local-model")
+
+        transformers.AutoTokenizer.from_pretrained.assert_called_once_with(
+            "local-model", local_files_only=True
+        )
+        transformers.AutoModelForSequenceClassification.from_pretrained.assert_called_once_with(
+            "local-model", local_files_only=True
+        )
+        pipeline.assert_called_once_with(
+            "text-classification", model=model, tokenizer=tokenizer
+        )
+
     def test_short_text_uses_one_pipeline_call_with_truncation(self):
         pipeline = mock.Mock(return_value=[{"label": "BENIGN", "score": 0.03}])
         detector = detector_with_pipeline(list(range(10)), pipeline)

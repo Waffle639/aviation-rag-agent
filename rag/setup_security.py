@@ -78,7 +78,11 @@ def check_license():
 def check_model():
     try:
         from transformers import AutoConfig
-        AutoConfig.from_pretrained(PROMPT_GUARD_MODEL, token=os.getenv("HF_TOKEN"))
+        AutoConfig.from_pretrained(
+            PROMPT_GUARD_MODEL,
+            token=os.getenv("HF_TOKEN"),
+            local_files_only=True,
+        )
         return True, "Model found in cache."
     except Exception:
         return False, "Model weights not in cache."

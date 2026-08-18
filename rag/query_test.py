@@ -32,15 +32,20 @@ def setup_logging():
 
 setup_logging()
 
-from rag.guardrails import GuardrailError, _get_detector, PROMPT_GUARD_MODEL  # noqa: E402
+from rag.guardrails import GuardrailError, RAG_SECURITY, _get_detector  # noqa: E402
 from rag.generator import generate_answer  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
 if __name__ == "__main__":
-    print("Loading Prompt Guard...")
-    _get_detector()
-    print()
+    if RAG_SECURITY:
+        print("Loading Prompt Guard from local cache...")
+        try:
+            _get_detector()
+        except GuardrailError as exc:
+            print(f"\nSecurity startup failed: {exc}", file=sys.stderr)
+            sys.exit(1)
+        print()
 
     question = input("Question: ")
 
