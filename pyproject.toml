@@ -1,6 +1,6 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v --strict-markers --strict-config --cov=ingestion --cov=rag --cov=ntsb --cov-branch --cov-report=term-missing --cov-fail-under=80"
+addopts = "-v --strict-markers --strict-config --cov=ingestion --cov=rag --cov=ntsb --cov-branch --cov-report=term-missing --cov-fail-under=95"
 markers = [
     "live: tests that call real external services (Supabase, OpenAI, HuggingFace). Enable with --live.",
     "integration_db: tests that require an ephemeral PostgreSQL/pgvector container.",
@@ -32,4 +32,4 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "if TYPE_CHECKING:",
 ]
-fail_under = 80
+fail_under = 95

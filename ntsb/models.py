@@ -26,13 +26,37 @@ class NTSBSearchQuery:
     event_type: str | None = None
     investigation_status: str | None = None
     text: str | None = None
+    needs_detail: bool = False
     sort: str = "date_desc"
     limit: int = 10
+    goal: str = "search"
+    ranking_field: str | None = None
+    ranking_order: str = "desc"
+    requested_fields: list[str] = field(default_factory=list)
+    requires_full_scan: bool = False
 
     def __post_init__(self) -> None:
         self.intent = self.intent if self.intent in {"search", "detail", "count"} else "search"
         self.sort = self.sort if self.sort in {"date_asc", "date_desc"} else "date_desc"
         self.limit = max(1, min(int(self.limit or 10), 100))
+        valid_goals = {"lookup", "search", "count", "rank", "compare", "explain"}
+        if self.goal == "search" and self.ranking_field:
+            self.goal = "rank"
+        elif self.goal == "search" and self.intent == "count":
+            self.goal = "count"
+        if self.goal not in valid_goals:
+            self.goal = (
+                "rank" if self.ranking_field
+                else "lookup" if self.intent == "detail" or self.ntsb_number or self.mkey is not None
+                else "count" if self.intent == "count"
+                else "search"
+            )
+        valid_ranking_fields = {"fatalities", "injuries", "date"}
+        if self.ranking_field not in valid_ranking_fields:
+            self.ranking_field = None
+        if self.ranking_order not in {"asc", "desc"}:
+            self.ranking_order = "desc"
+        self.requested_fields = [str(value) for value in (self.requested_fields or [])]
         for name in ("start_date", "end_date"):
             value = getattr(self, name)
             if value:
@@ -42,6 +66,9 @@ class NTSBSearchQuery:
                     raise ValueError(f"{name} must use YYYY-MM-DD format") from exc
         if self.mkey is not None:
             self.mkey = int(self.mkey)
+        self.requires_full_scan = bool(
+            self.requires_full_scan or self.goal in {"rank", "compare"}
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -63,10 +90,15 @@ class NTSBCase:
     event_type: str | None = None
     severity: str | None = None
     investigation_status: str | None = None
+    event_time: str | None = None
     fatalities: int | float | None = None
     injuries: int | float | None = None
     narrative: str | None = None
     probable_cause: str | None = None
+    airport: str | None = None
+    runway: str | None = None
+    events: list[str] = field(default_factory=list)
+    findings: list[str] = field(default_factory=list)
     raw: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -92,13 +124,18 @@ class NTSBCase:
             ("Lugar", self.location),
             ("Estado", self.state),
             ("País", self.country),
+            ("Hora del evento", self.event_time),
             ("Tipo de evento", self.event_type),
             ("Gravedad", self.severity),
             ("Fallecidos", self.fatalities),
             ("Heridos", self.injuries),
             ("Estado de investigación", self.investigation_status),
+            ("Aeropuerto", self.airport),
+            ("Pista", self.runway),
             ("Narrativa", self.narrative),
             ("Causa probable", self.probable_cause),
+            ("Eventos", "; ".join(self.events) if self.events else None),
+            ("Hallazgos", "; ".join(self.findings) if self.findings else None),
         ]
         body = "\n".join(f"{label}: {value}" for label, value in fields if value not in (None, ""))
         return f"[Fuente: NTSB | Caso: {self.identifier}]\n{body}"

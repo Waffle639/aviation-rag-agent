@@ -79,7 +79,7 @@ Answer:
 
 
 @traceable(run_type="chain", name="rag_pipeline")
-def generate_result(question):
+def generate_result(question, *, langsmith_extra=None):
     started_at = time.perf_counter()
     cleaned = validate_question(question)
 
@@ -181,6 +181,17 @@ Answer:"""
         if value is not None:
             token_usage[field_name] = int(value)
 
+    metadata = {
+        "model": MODEL_NAME,
+        "top_k": K_TOP,
+        "retrieved_count": len(retrieved_items),
+        "context_count": len(chunks_context),
+    }
+    if isinstance(langsmith_extra, dict):
+        metadata.update(langsmith_extra.get("metadata") or {})
+        if langsmith_extra.get("name"):
+            metadata["langsmith_name"] = langsmith_extra["name"]
+
     return RAGResult(
         question=cleaned,
         answer=answer,
@@ -196,12 +207,7 @@ Answer:"""
             "total": (time.perf_counter() - started_at) * 1000,
         },
         token_usage=token_usage,
-        metadata={
-            "model": MODEL_NAME,
-            "top_k": K_TOP,
-            "retrieved_count": len(retrieved_items),
-            "context_count": len(chunks_context),
-        },
+        metadata=metadata,
     )
 
 
@@ -253,6 +259,13 @@ If the search was truncated or only covered a limited period, state that limitat
 """
     if search_result.truncated:
         instructions += " The search metadata reports a configured limit; do not call the result complete."
+    if search_result.query.goal in {"rank", "compare"}:
+        instructions += (
+            " This is a ranking/comparison request. Use the requested ranking metric from the "
+            "retrieval metadata and do not substitute recency for the requested metric."
+        )
+        if search_result.truncated:
+            instructions += " Explicitly state that the ranking is incomplete."
     if not context_items:
         context_items = [{
             "texto": "No NTSB aviation cases matched the validated search filters.",

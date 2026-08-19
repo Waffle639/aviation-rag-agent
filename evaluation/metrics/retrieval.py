@@ -37,6 +37,11 @@ def _unique_ids(item_ids: Iterable[str]) -> list[str]:
     return unique
 
 
+def _validate_k(k: int) -> None:
+    if isinstance(k, bool) or not isinstance(k, int) or k <= 0:
+        raise ValueError("k must be a positive integer")
+
+
 def recall_at_k(
     ranked_ids: Sequence[str],
     qrels: Mapping[str, int],
@@ -44,6 +49,7 @@ def recall_at_k(
     relevance_threshold: int = 2,
 ) -> float:
     """Return the fraction of relevant items found in the first ``k`` ranks."""
+    _validate_k(k)
     relevant = _relevant_ids(qrels, relevance_threshold)
     if not relevant:
         return 1.0
@@ -58,8 +64,7 @@ def precision_at_k(
     relevance_threshold: int = 2,
 ) -> float:
     """Return the fraction of the first ``k`` ranks that are relevant."""
-    if k <= 0:
-        raise ValueError("k must be positive")
+    _validate_k(k)
     relevant = _relevant_ids(qrels, relevance_threshold)
     return sum(item_id in relevant for item_id in ranked_ids[:k]) / k
 
@@ -71,6 +76,7 @@ def hit_rate_at_k(
     relevance_threshold: int = 2,
 ) -> float:
     """Return 1 when at least one relevant item appears in the first ``k`` ranks."""
+    _validate_k(k)
     relevant = _relevant_ids(qrels, relevance_threshold)
     return float(bool(relevant.intersection(ranked_ids[:k])))
 
@@ -101,6 +107,7 @@ def ndcg_at_k(
     k: int,
 ) -> float:
     """Return nDCG@k using the qrels' graded relevance values."""
+    _validate_k(k)
     actual = [qrels.get(item_id, 0) for item_id in ranked_ids[:k]]
     ideal = sorted(qrels.values(), reverse=True)[:k]
     ideal_dcg = _dcg(ideal)

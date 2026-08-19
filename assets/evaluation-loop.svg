@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="266" viewBox="0 0 1280 266" role="img" aria-labelledby="title desc">
+  <title id="title">Evaluation loop</title>
+  <desc id="desc">Golden cases run through the RAG pipeline, persist evidence and metrics, compare against a baseline, and reach the dashboard before the next iteration.</desc>
+  <style>
+    .serif { font-family: Georgia, "Times New Roman", serif; }
+    .mono { font-family: "Courier New", ui-monospace, monospace; }
+    .ink { fill: #29343A; }
+    .muted { fill: #69746F; }
+    .small { font-size: 12px; letter-spacing: 1.5px; font-weight: 700; }
+    .body { font-size: 13px; }
+  </style>
+
+  <rect width="1280" height="266" fill="#F4EFE5"/>
+  <path d="M48 88 C210 85 379 92 540 88 S884 90 1232 87" fill="none" stroke="#C9BFAE" stroke-width="1"/>
+  <text class="mono muted small" x="48" y="38">EVALUATION LOOP</text>
+  <text class="serif ink" x="48" y="69" font-size="24" font-weight="700">Evidence drives the next experiment</text>
+
+  <g class="serif ink">
+    <path d="M40 109 Q43 103 51 105 L244 104 Q253 106 255 114 L253 218 Q251 226 242 225 L51 226 Q41 224 40 216 Z" fill="#FFFDF7" stroke="#47545A" stroke-width="1.5"/>
+    <path d="M43 112 Q48 108 57 109 L239 108 Q248 110 251 117" fill="none" stroke="#B5A894" stroke-width="1"/>
+    <text class="mono muted small" x="61" y="135">01 / CASES</text>
+    <text x="61" y="169" font-size="20" font-weight="700">Golden cases</text>
+    <text class="mono muted body" x="61" y="198">questions + expected</text>
+    <text class="mono muted body" x="61" y="217">evidence</text>
+
+    <path d="M295 106 Q300 101 308 103 L501 105 Q510 106 510 114 L508 219 Q506 227 497 225 L305 224 Q296 223 295 215 Z" fill="#FFFDF7" stroke="#47545A" stroke-width="1.5"/>
+    <path d="M299 109 Q310 106 325 108 L497 109" fill="none" stroke="#B5A894" stroke-width="1"/>
+    <text class="mono muted small" x="317" y="135">02 / RUN</text>
+    <text x="317" y="169" font-size="20" font-weight="700">Run the RAG</text>
+    <text class="mono muted body" x="317" y="198">same path as the</text>
+    <text class="mono muted body" x="317" y="217">application</text>
+
+    <path d="M550 110 Q554 103 563 105 L756 104 Q764 106 765 113 L763 217 Q761 225 753 225 L561 226 Q551 224 550 216 Z" fill="#FFFDF7" stroke="#47545A" stroke-width="1.5"/>
+    <path d="M554 113 Q568 108 580 110 L753 108" fill="none" stroke="#B5A894" stroke-width="1"/>
+    <text class="mono muted small" x="572" y="135">03 / RECORD</text>
+    <text x="572" y="169" font-size="20" font-weight="700">Persist evidence</text>
+    <text class="mono muted body" x="572" y="198">context, timings</text>
+    <text class="mono muted body" x="572" y="217">+ metrics</text>
+
+    <path d="M805 107 Q811 102 820 104 L1012 106 Q1020 107 1020 115 L1018 219 Q1015 226 1007 224 L816 225 Q806 223 805 215 Z" fill="#FFFDF7" stroke="#47545A" stroke-width="1.5"/>
+    <path d="M809 110 Q818 106 835 108 L1008 110" fill="none" stroke="#B5A894" stroke-width="1"/>
+    <text class="mono muted small" x="827" y="135">04 / COMPARE</text>
+    <text x="827" y="169" font-size="20" font-weight="700">Candidate</text>
+    <text class="mono muted body" x="827" y="198">against baseline</text>
+
+    <path d="M1060 109 Q1064 102 1074 104 L1267 103 Q1275 105 1276 113 L1274 218 Q1272 226 1264 225 L1071 226 Q1061 224 1060 216 Z" fill="#F7F6ED" stroke="#47545A" stroke-width="1.5"/>
+    <path d="M1064 112 Q1078 107 1092 109 L1264 107" fill="none" stroke="#8D9E8D" stroke-width="1.5"/>
+    <text class="mono muted small" x="1082" y="135">05 / DASHBOARD</text>
+    <text x="1082" y="169" font-size="20" font-weight="700">Inspect</text>
+    <text class="mono muted body" x="1082" y="198">learn + iterate</text>
+  </g>
+
+  <g fill="none" stroke="#7A8580" stroke-width="1.8" stroke-linecap="round">
+    <path d="M256 169 C267 166 275 173 286 168"/>
+    <path d="M511 167 C521 164 530 171 541 167"/>
+    <path d="M766 169 C777 165 785 172 796 167"/>
+    <path d="M1021 167 C1031 164 1040 171 1051 167"/>
+    <path d="M280 165 l8 3 -8 5"/>
+    <path d="M535 164 l8 3 -8 5"/>
+    <path d="M790 164 l8 3 -8 5"/>
+    <path d="M1045 164 l8 3 -8 5"/>
+    <path d="M1167 226 C1167 252 105 252 105 226" stroke="#9A9387" stroke-dasharray="5 6"/>
+    <path d="M101 222 l4 7 5 -7"/>
+  </g>
+</svg>

@@ -1,3 +1,4 @@
+from datetime import date
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -7,17 +8,43 @@ from ntsb.planner import plan_query
 def test_planner_requests_strict_schema_and_returns_query():
     client = Mock()
     client.responses.create.return_value = SimpleNamespace(
-        output_text='{"intent":"search","ntsb_number":null,"mkey":null,"registration":null,'
+        output_text='{"intent":"search","goal":"search","ntsb_number":null,"mkey":null,"registration":null,'
         '"start_date":"2024-01-01","end_date":"2024-12-31","make":"Boeing",'
         '"model":"747","location":null,"state":null,"country":null,"severity":null,'
         '"event_type":null,"investigation_status":null,"text":null,"needs_detail":false,'
-        '"sort":"date_desc","limit":5}'
+        '"sort":"date_desc","limit":5,"ranking_field":null,"ranking_order":"desc",'
+        '"requested_fields":["aircraft"],"requires_full_scan":false}'
     )
 
     query = plan_query(client, "últimos Boeing 747 de 2024", "gpt-test")
 
     assert query.make == "Boeing"
     assert query.limit == 5
+    assert query.requested_fields == ["aircraft"]
     request = client.responses.create.call_args.kwargs
     assert request["text"]["format"]["name"] == "ntsb_search_query"
     assert request["text"]["format"]["strict"] is True
+
+
+def test_planner_repairs_fatality_ranking_and_relative_period():
+    client = Mock()
+    client.responses.create.return_value = SimpleNamespace(
+        output_text=(
+            '{"intent":"search","ntsb_number":null,"mkey":null,"registration":null,'
+            '"start_date":null,"end_date":null,"make":null,"model":null,"location":null,'
+            '"state":null,"country":null,"severity":null,"event_type":null,'
+            '"investigation_status":null,"text":null,"sort":"date_desc","limit":10}'
+        )
+    )
+
+    query = plan_query(client, "the accident with more deaths in the past 10 years", "gpt-test")
+
+    assert query.goal == "rank"
+    assert query.ranking_field == "fatalities"
+    assert query.ranking_order == "desc"
+    assert query.requires_full_scan is True
+    assert query.needs_detail is True
+    assert query.limit == 1
+    assert query.start_date == date.today().replace(year=date.today().year - 10).isoformat()
+    assert query.end_date == date.today().isoformat()
+    assert "probable_cause" in query.requested_fields

@@ -654,7 +654,7 @@ class EvaluationRepository:
     def get_case_metrics(self, run_id: str, case_id: str) -> list[dict[str, Any]]:
         with self._pool.cursor() as cursor:
             cursor.execute(
-                """
+                f"""
                 select metric_name, score, evaluator_version, details
                 from evaluation.metrics
                 where run_id = %s and case_id = %s and {public_metric_sql_filter()}

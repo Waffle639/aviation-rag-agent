@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="286" viewBox="0 0 1280 286" role="img" aria-labelledby="title desc">
+  <title id="title">Core RAG pipeline</title>
+  <desc id="desc">Source material is prepared, indexed, retrieved with hybrid search, and used to generate a grounded answer.</desc>
+  <style>
+    .serif { font-family: Georgia, "Times New Roman", serif; }
+    .mono { font-family: "Courier New", ui-monospace, monospace; }
+    .ink { fill: #29343A; }
+    .muted { fill: #69746F; }
+    .small { font-size: 12px; letter-spacing: 1.5px; font-weight: 700; }
+    .body { font-size: 13px; }
+  </style>
+
+  <rect width="1280" height="286" fill="#F4EFE5"/>
+  <path d="M48 91 C210 87 379 94 540 90 S884 92 1232 89" fill="none" stroke="#C9BFAE" stroke-width="1"/>
+  <text class="mono muted small" x="48" y="39">CORE RAG PATH</text>
+  <text class="serif ink" x="48" y="71" font-size="24" font-weight="700">From source material to grounded answer</text>
+
+  <g class="serif ink">
+    <path d="M40 113 Q43 106 51 108 L244 107 Q253 109 255 117 L253 238 Q251 246 242 245 L51 246 Q41 244 40 236 Z" fill="#FFFDF7" stroke="#47545A" stroke-width="1.5"/>
+    <path d="M43 116 Q48 111 57 112 L239 111 Q248 113 251 120" fill="none" stroke="#B5A894" stroke-width="1"/>
+    <text class="mono muted small" x="61" y="139">01 / SOURCE</text>
+    <text x="61" y="174" font-size="20" font-weight="700">Manuals</text>
+    <text class="mono muted body" x="61" y="204">+ extracts</text>
+    <text class="mono muted body" x="61" y="224">with provenance</text>
+
+    <path d="M295 110 Q300 104 308 106 L501 109 Q510 110 510 118 L508 239 Q506 247 497 245 L305 244 Q296 243 295 235 Z" fill="#FFFDF7" stroke="#47545A" stroke-width="1.5"/>
+    <path d="M299 113 Q310 109 325 111 L497 113" fill="none" stroke="#B5A894" stroke-width="1"/>
+    <text class="mono muted small" x="317" y="139">02 / PREPARE</text>
+    <text x="317" y="174" font-size="20" font-weight="700">Clean</text>
+    <text class="mono muted body" x="317" y="204">track stable</text>
+    <text class="mono muted body" x="317" y="224">provenance</text>
+
+    <path d="M550 114 Q554 106 563 108 L756 107 Q764 109 765 117 L763 237 Q761 245 753 245 L561 246 Q551 244 550 236 Z" fill="#FFFDF7" stroke="#47545A" stroke-width="1.5"/>
+    <path d="M554 117 Q568 111 580 113 L753 111" fill="none" stroke="#B5A894" stroke-width="1"/>
+    <text class="mono muted small" x="572" y="139">03 / INDEX</text>
+    <text x="572" y="174" font-size="20" font-weight="700">Parent / child</text>
+    <text class="mono muted body" x="572" y="204">chunks +</text>
+    <text class="mono muted body" x="572" y="224">embeddings</text>
+
+    <path d="M805 111 Q811 106 820 108 L1012 110 Q1020 111 1020 119 L1018 239 Q1015 246 1007 244 L816 245 Q806 243 805 235 Z" fill="#FFFDF7" stroke="#47545A" stroke-width="1.5"/>
+    <path d="M809 114 Q818 110 835 112 L1008 114" fill="none" stroke="#B5A894" stroke-width="1"/>
+    <text class="mono muted small" x="827" y="139">04 / RETRIEVE</text>
+    <text x="827" y="174" font-size="20" font-weight="700">Hybrid search</text>
+    <text class="mono muted body" x="827" y="204">select parent</text>
+    <text class="mono muted body" x="827" y="224">context</text>
+
+    <path d="M1060 113 Q1064 106 1074 108 L1267 107 Q1275 109 1276 117 L1274 238 Q1272 246 1264 245 L1071 246 Q1061 244 1060 236 Z" fill="#F7F6ED" stroke="#47545A" stroke-width="1.5"/>
+    <path d="M1064 116 Q1078 111 1092 113 L1264 111" fill="none" stroke="#8D9E8D" stroke-width="1.5"/>
+    <text class="mono muted small" x="1082" y="139">05 / GENERATE</text>
+    <text x="1082" y="174" font-size="20" font-weight="700">Grounded answer</text>
+    <text class="mono muted body" x="1082" y="204">citations +</text>
+    <text class="mono muted body" x="1082" y="224">abstention</text>
+  </g>
+
+  <g fill="none" stroke="#7A8580" stroke-width="1.8" stroke-linecap="round">
+    <path d="M256 180 C267 177 275 184 286 179"/>
+    <path d="M511 178 C521 175 530 182 541 178"/>
+    <path d="M766 180 C777 176 785 183 796 178"/>
+    <path d="M1021 178 C1031 175 1040 182 1051 178"/>
+    <path d="M280 176 l8 3 -8 5"/>
+    <path d="M535 175 l8 3 -8 5"/>
+    <path d="M790 175 l8 3 -8 5"/>
+    <path d="M1045 175 l8 3 -8 5"/>
+  </g>
+</svg>

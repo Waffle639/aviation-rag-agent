@@ -1,14 +1,6 @@
 # Aviation RAG Agent
 
-```mermaid
-flowchart LR
-    A[Manuals and extracts] --> B[Clean and track provenance]
-    B --> C[Parent / child chunks]
-    C --> D[Embeddings and full-text index]
-    D --> E[Hybrid search]
-    E --> F[Parent context]
-    F --> G[Grounded answer]
-```
+[![Core RAG pipeline](assets/core-rag-pipeline.svg)](assets/core-rag-pipeline.svg)
 
 This is not primarily a package for someone to download and run. It is a working case study: every important layer is implemented explicitly so that retrieval quality, context selection, latency and failure modes can be inspected instead of hidden behind a framework.
 
@@ -85,18 +77,31 @@ The generator receives retrieved context inside explicit data boundaries. Its co
 
 Input validation, local Prompt Guard, OpenAI moderation and output leak checks form a fail-closed defence in depth. Security is applied when untrusted text enters the system: both at ingestion and at query time.
 
+## NTSB integration
+
+The project also includes a separate live-data path for structured aviation accident records from the NTSB public API. It does not add NTSB records to the PostgreSQL/vector corpus.
+
+The NTSB flow is implemented in `ntsb/` and `rag/generator.py`:
+
+- A planner converts the natural-language question into a bounded `NTSBSearchQuery` using a strict JSON schema.
+- The search service supports case detail by NTSB number or `mkey`, registration searches, and date-range searches in aviation mode.
+- Results are normalised to `NTSBCase` objects and filtered locally for fields such as aircraft, location, country, severity, investigation status and descriptive text.
+- Pagination, date windows, result limits and detail hydration are bounded by configuration. Independent detail requests can run concurrently within the configured limit.
+- The generator answers only from the returned NTSB records, cites the NTSB case number when available, reports truncated searches, and abstains with `I don't have that information in the NTSB records.` when the records do not support an answer.
+
+The API client uses the subscription key from `NTSB_API_KEY`, sends the configured User-Agent, and applies retries for transient failures. The remaining `NTSB_API_*` variables in `.env.example` control the endpoint, timeout, pagination, search windows, hydration and concurrency limits.
+
+To run the interactive NTSB query flow after configuring `.env`:
+
+```bash
+python -m rag.query_test_ntsb
+```
+
 ## Evaluation is the decision loop
 
 The project treats evaluation as infrastructure, not as a final report. The runner executes the same RAG path used by the application and persists the complete evidence chain for every case.
 
-```mermaid
-flowchart LR
-    A[Golden cases] --> B[Run the RAG]
-    B --> C[Persist evidence and metrics]
-    C --> D[Compare with baseline]
-    D --> E[Dashboard]
-    E --> A
-```
+[![Evaluation loop](assets/evaluation-loop.svg)](assets/evaluation-loop.svg)
 
 The first dataset, `aviation_golden_v1`, contains 36 English cases built from the downloaded sources, including an explicit out-of-corpus question. Golden answers and evidence live in the separate `evaluation` PostgreSQL schema; they never become searchable RAG context.
 
@@ -132,6 +137,8 @@ The dashboard automatically chooses a compatible baseline from the same dataset.
 ```text
 ingestion/       document cleaning, parent-child chunking and embedding/upsert
 rag/             retrieval, generation, guardrails and structured results
+ntsb/            NTSB API client, query planning, case normalisation and search
+assets/          responsive SVG diagrams used by this README
 evaluation/      dataset runner, manifest handling and deterministic metrics
 dashboard/       read-only Streamlit views over persisted evaluation runs
 db/              pgvector, full-text search and evaluation schema
@@ -162,9 +169,15 @@ Tests:
 pytest tests
 ```
 
+The NTSB flow can be exercised independently from the indexed-document path:
+
+```bash
+python -m rag.query_test_ntsb
+```
+
 ## Current boundary and next experiment
 
-The indexed-document path is the core system. A separate NTSB flow is now available for structured accident records, but it is intentionally kept outside the vector corpus. The next architectural step is a routing agent that chooses between manuals, NTSB records or both, followed by generation-quality evaluation with RAGAS-style metrics.
+The indexed-document path is the core system. The NTSB flow is available for structured accident records, but it is intentionally kept outside the vector corpus and is not yet selected automatically with the manuals path. The next architectural step is a routing agent that chooses between manuals, NTSB records or both, followed by generation-quality evaluation with RAGAS-style metrics.
 
 ## What "done" means here
 

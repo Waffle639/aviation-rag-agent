@@ -54,6 +54,30 @@ def test_normalize_case_supports_nested_aircraft_fields():
     assert case.fatalities == 2
 
 
+def test_normalize_case_extracts_airport_runway_events_and_findings():
+    case = normalize_case(
+        {
+            "ntsbNumber": "A1",
+            "eventTimeUtc": "15:52:00",
+            "airports": [
+                {
+                    "airportFacilityName": "JAFFREY AIRFIELD",
+                    "airportRunwayId": "34",
+                }
+            ],
+            "events": [{"eventTier1Name": "Landing", "eventTier2Name": "Loss of control"}],
+            "findings": [{"findingDescription": "Directional control not maintained"}],
+        }
+    )
+
+    assert case.airport == "JAFFREY AIRFIELD"
+    assert case.runway == "34"
+    assert case.event_time == "15:52:00"
+    assert case.events == ["Loss of control"]
+    assert case.findings == ["Directional control not maintained"]
+    assert "Aeropuerto: JAFFREY AIRFIELD" in case.to_context()
+
+
 @pytest.mark.parametrize(
     ("actual", "expected"),
     [
@@ -95,6 +119,91 @@ def test_limit_one_stops_pagination_after_first_summary_match():
 
     assert [case.ntsb_number for case in result.cases] == ["A1"]
     assert session.get.call_count == 1
+
+
+def test_fatality_ranking_scans_full_range_then_hydrates_winner():
+    session = Mock()
+    session.get.side_effect = [
+        Mock(
+            status_code=200,
+            headers={},
+            json=lambda: {
+                "items": [{"ntsbNumber": "A1", "eventDate": "2023-01-01", "totalFatal": 2}],
+                "marker": "next",
+            },
+        ),
+        Mock(
+            status_code=200,
+            headers={},
+            json=lambda: {
+                "items": [{"ntsbNumber": "A2", "eventDate": "2023-06-01", "totalFatal": 10}]
+            },
+        ),
+        Mock(
+            status_code=200,
+            headers={},
+            json=lambda: {
+                "ntsbNumber": "A2",
+                "eventDate": "2023-06-01",
+                "totalFatal": 10,
+                "probableCause": "Loss of control",
+            },
+        ),
+    ]
+
+    result = NTSBSearchService(client(session)).search(
+        NTSBSearchQuery(
+            start_date="2023-01-01",
+            end_date="2023-12-31",
+            goal="rank",
+            ranking_field="fatalities",
+            ranking_order="desc",
+            requested_fields=["fatalities", "probable_cause"],
+            needs_detail=True,
+            limit=1,
+        )
+    )
+
+    assert [case.ntsb_number for case in result.cases] == ["A2"]
+    assert result.cases[0].fatalities == 10
+    assert result.cases[0].probable_cause == "Loss of control"
+    assert result.pages_examined == 2
+    assert session.get.call_count == 3
+
+
+def test_fatality_ranking_does_not_hydrate_nonfatal_summaries_without_totals():
+    session = Mock()
+    session.get.side_effect = [
+        Mock(
+            status_code=200,
+            headers={},
+            json=lambda: {
+                "items": [
+                    {"ntsbNumber": "A1", "eventDate": "2023-01-01", "highestInjuryLevel": "Minor"},
+                    {"ntsbNumber": "A2", "eventDate": "2023-02-01", "highestInjuryLevel": "Serious"},
+                ]
+            },
+        ),
+        Mock(
+            status_code=200,
+            headers={},
+            json=lambda: {"ntsbNumber": "A1", "probableCause": "Cause"},
+        ),
+    ]
+
+    result = NTSBSearchService(client(session)).search(
+        NTSBSearchQuery(
+            start_date="2023-01-01",
+            end_date="2023-12-31",
+            goal="rank",
+            ranking_field="fatalities",
+            needs_detail=True,
+            limit=1,
+        )
+    )
+
+    assert [case.ntsb_number for case in result.cases] == ["A1"]
+    assert session.get.call_count == 2
 
 
 def test_date_asc_starts_at_lower_bound_and_stops_on_first_match():
