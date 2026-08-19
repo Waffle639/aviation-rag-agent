@@ -8,6 +8,7 @@ from rag.guardrails import (
     GuardrailError,
     MAX_CONTEXT_CHARS,
     MAX_QUESTION_CHARS,
+    PromptGuardDetector,
     _normalize,
     _run_detector,
     check_output,
@@ -276,3 +277,46 @@ class TestGetDetector:
             assert guardrails._get_detector() is fake  # cached, no second build
 
         cls.assert_called_once_with(guardrails.PROMPT_GUARD_MODEL)
+
+    def test_detector_load_failure_becomes_controlled_guardrail_error(self, monkeypatch):
+        monkeypatch.setattr(guardrails, "RAG_SECURITY", True)
+        monkeypatch.setattr(guardrails, "_detector", None)
+        monkeypatch.setattr(
+            guardrails,
+            "PromptGuardDetector",
+            mock.Mock(side_effect=ImportError("transformers missing")),
+        )
+
+        with pytest.raises(GuardrailError, match="not available"):
+            guardrails._get_detector()
+
+
+def test_openai_client_is_created_lazily_and_cached(monkeypatch):
+    monkeypatch.setattr(guardrails, "_openai_client", None)
+    fake_client = mock.Mock()
+    with (
+        mock.patch.object(guardrails, "OpenAI", return_value=fake_client) as openai,
+        mock.patch.object(guardrails, "wrap_openai", side_effect=lambda client: client) as wrap,
+    ):
+        assert guardrails._get_openai_client() is fake_client
+        assert guardrails._get_openai_client() is fake_client
+
+    openai.assert_called_once()
+    wrap.assert_called_once_with(fake_client)
+
+
+def test_short_tail_window_uses_fallback_pipeline_call():
+    detector = object.__new__(PromptGuardDetector)
+    detector._tokenizer = mock.Mock()
+    detector._tokenizer.encode.return_value = list(range(10))
+    detector._pipeline = mock.Mock(return_value=[{"label": "BENIGN", "score": 0.2}])
+
+    assert detector._classify_windowed("long", list(range(10))) == ("BENIGN", 0.2)
+    detector._pipeline.assert_called_once_with("long", truncation=True)
+
+
+def test_run_detector_is_noop_when_security_is_disabled(monkeypatch):
+    monkeypatch.setattr(guardrails, "RAG_SECURITY", False)
+    monkeypatch.setattr(guardrails, "_detector", None)
+
+    guardrails._run_detector("question")

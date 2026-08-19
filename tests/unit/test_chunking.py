@@ -297,4 +297,24 @@ class TestProcessDocument:
         # every child text is a substring of its own parent
         for i, children in enumerate(children_map):
             for child in children:
-                assert child in parents[i] or parents[i].startswith(child[:50])
+                assert child in parents[i]
+
+    def test_process_document_records_corpus_relative_provenance(self, tmp_path, monkeypatch):
+        from ingestion import chunking
+
+        corpus_root = tmp_path / "raw"
+        source = corpus_root / "wiki" / "Plane.txt"
+        source.parent.mkdir(parents=True)
+        source.write_text("A corpus fact.", encoding="utf-8")
+        monkeypatch.setattr(chunking, "CORPUS_ROOT", corpus_root)
+
+        chunking.process_document(
+            str(source), "Plane", "wiki", output_root=str(tmp_path / "out")
+        )
+
+        import json
+
+        payload = json.loads(
+            (tmp_path / "out/chunks/Plane/chunk_1.json").read_text(encoding="utf-8")
+        )
+        assert payload["metadata"]["source_file"] == "data/raw/wiki/Plane.txt"

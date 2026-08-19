@@ -11,7 +11,11 @@ from rag.guardrails import GuardrailError
 def generator(import_fresh):
     """Import generator without constructing real database/OpenAI clients."""
     with import_fresh("rag.generator") as modules:
-        yield modules["rag.generator"]
+        generator_module = modules["rag.generator"]
+        benign_detector = mock.Mock(name="benign_detector")
+        benign_detector.classify.return_value = ("BENIGN", 0.01)
+        with mock.patch.object(guardrails, "_detector", benign_detector):
+            yield generator_module
 
 
 @pytest.fixture

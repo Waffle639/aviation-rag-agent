@@ -13,7 +13,8 @@ def test_ntsb_generator_plans_searches_and_grounds_answer(import_fresh):
                 '{"intent":"search","ntsb_number":null,"mkey":null,"registration":null,'
                 '"start_date":"2024-01-01","end_date":"2024-12-31","make":"Cessna",'
                 '"model":null,"location":null,"state":"CA","country":null,"severity":null,'
-                '"event_type":null,"investigation_status":null,"text":null,"sort":"date_desc","limit":5}'
+                '"event_type":null,"investigation_status":null,"text":null,'
+                '"needs_detail":false,"sort":"date_desc","limit":5}'
             )
         )
         answer_response = SimpleNamespace(output_text="Caso NTSB A1: información recuperada.")

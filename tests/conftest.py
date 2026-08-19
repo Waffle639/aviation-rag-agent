@@ -30,6 +30,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 import pytest
+from langsmith import tracing_context
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
@@ -55,6 +56,15 @@ else:
 
 # Never send LangSmith traces during tests.
 os.environ["LANGSMITH_TRACING"] = "false"
+os.environ["LANGCHAIN_TRACING_V2"] = "false"
+os.environ["LANGSMITH_API_KEY"] = ""
+
+
+@pytest.fixture(autouse=True)
+def disable_langsmith_tracing():
+    """Prevent every traceable function from creating a LangSmith run in tests."""
+    with tracing_context(enabled=False):
+        yield
 
 
 def pytest_addoption(parser):

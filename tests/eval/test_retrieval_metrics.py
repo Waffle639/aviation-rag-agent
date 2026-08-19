@@ -4,6 +4,7 @@ from evaluation.metrics.retrieval import (
     RetrievedItem,
     duplicate_ratio,
     evaluate_retrieval,
+    hit_rate_at_k,
     mean_reciprocal_rank,
     ndcg_at_k,
     precision_at_k,
@@ -57,3 +58,17 @@ def test_ranked_quality_metrics_deduplicate_document_ids_before_scoring():
 
     assert metrics["mrr"] == pytest.approx(1 / 2)
     assert metrics["recall_at_3"] == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize("metric", [recall_at_k, precision_at_k, hit_rate_at_k, ndcg_at_k])
+@pytest.mark.parametrize("k", [0, -1, True, 1.5])
+def test_ranked_metrics_reject_invalid_cutoffs(metric, k):
+    with pytest.raises(ValueError, match="positive integer"):
+        metric(["p1"], {"p1": 3}, k)
+
+
+def test_empty_qrels_have_explicit_metric_semantics():
+    assert recall_at_k([], {}, 3) == 1.0
+    assert precision_at_k([], {}, 3) == 0.0
+    assert hit_rate_at_k([], {}, 3) == 0.0
+    assert ndcg_at_k([], {}, 3) == 1.0

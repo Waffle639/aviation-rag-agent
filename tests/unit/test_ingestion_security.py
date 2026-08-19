@@ -66,11 +66,9 @@ class TestScanIngestionChunks:
         assert failures == [("broken", "model unavailable")]
         assert detector.classify.call_count == 2
 
-    @pytest.mark.parametrize("security", [False, "disabled"])
-    def test_disabled_security_skips_detector(self, embedder, make_chunk, security):
+    def test_disabled_security_skips_detector(self, embedder, make_chunk):
         detector = mock.Mock()
-        value = False if security is False else False
-        with mock.patch.object(guardrails, "RAG_SECURITY", value), mock.patch.object(
+        with mock.patch.object(guardrails, "RAG_SECURITY", False), mock.patch.object(
             guardrails, "_get_detector", return_value=detector
         ):
             result = embedder._scan_ingestion_chunks([make_chunk()])
