@@ -66,6 +66,132 @@ alter table documents
 create index if not exists idx_documents_tsv
     on documents using gin (texto_tsv);
 
+-- ---------------------------------------------------------------------------
+-- NTSB structured aviation case index
+-- ---------------------------------------------------------------------------
+-- NTSB data is kept as a relational read model, not mixed with the manual
+-- vector corpus. The public API is used by the sync job; interactive queries
+-- read these tables directly for exact counts, filters and rankings.
+create schema if not exists ntsb;
+
+create table if not exists ntsb.cases (
+    mkey bigint primary key,
+    ntsb_number text unique,
+    event_date date,
+    event_time time,
+    city text,
+    location text,
+    state text,
+    country text,
+    country_code text,
+    event_type text,
+    severity text,
+    investigation_status text,
+    fatalities integer,
+    serious_injuries integer,
+    minor_injuries integer,
+    total_injuries integer,
+    narrative text,
+    probable_cause text,
+    airport text,
+    runway text,
+    source_updated_at timestamptz,
+    synced_at timestamptz not null default now(),
+    payload_hash text,
+    search_tsv tsvector generated always as (
+        to_tsvector('english', coalesce(ntsb_number, '') || ' ' || coalesce(city, '') || ' ' ||
+        coalesce(location, '') || ' ' || coalesce(state, '') || ' ' || coalesce(country, '') || ' ' ||
+        coalesce(event_type, '') || ' ' || coalesce(severity, '') || ' ' ||
+        coalesce(investigation_status, '') || ' ' || coalesce(narrative, '') || ' ' ||
+        coalesce(probable_cause, '') || ' ' || coalesce(airport, '') || ' ' || coalesce(runway, ''))
+    ) stored
+);
+
+create table if not exists ntsb.aircraft (
+    case_mkey bigint not null references ntsb.cases(mkey) on delete cascade,
+    aircraft_sequence integer not null default 1,
+    make text,
+    model text,
+    registration text,
+    category text,
+    operation text,
+    damage text,
+    primary key (case_mkey, aircraft_sequence)
+);
+
+create table if not exists ntsb.events (
+    case_mkey bigint not null references ntsb.cases(mkey) on delete cascade,
+    event_sequence integer not null default 1,
+    event_text text not null,
+    primary key (case_mkey, event_sequence)
+);
+
+create table if not exists ntsb.findings (
+    case_mkey bigint not null references ntsb.cases(mkey) on delete cascade,
+    finding_sequence integer not null default 1,
+    finding_text text not null,
+    primary key (case_mkey, finding_sequence)
+);
+
+create table if not exists ntsb.airports (
+    case_mkey bigint not null references ntsb.cases(mkey) on delete cascade,
+    airport_sequence integer not null default 1,
+    airport_name text,
+    runway text,
+    primary key (case_mkey, airport_sequence)
+);
+
+create table if not exists ntsb.detail_cache (
+    case_mkey bigint primary key references ntsb.cases(mkey) on delete cascade,
+    payload jsonb not null,
+    payload_hash text,
+    fetched_at timestamptz not null default now()
+);
+
+create table if not exists ntsb.sync_state (
+    stream text primary key,
+    last_successful_start timestamptz,
+    last_successful_end timestamptz,
+    marker text,
+    status text not null default 'idle',
+    error text,
+    updated_at timestamptz not null default now()
+);
+
+create table if not exists ntsb.sync_runs (
+    run_id bigserial primary key,
+    stream text not null,
+    started_at timestamptz not null default now(),
+    finished_at timestamptz,
+    status text not null default 'running',
+    pages integer not null default 0,
+    records_received integer not null default 0,
+    cases_upserted integer not null default 0,
+    details_fetched integer not null default 0,
+    skipped_existing integer not null default 0,
+    rejected integer not null default 0,
+    error text
+);
+
+alter table ntsb.sync_runs add column if not exists skipped_existing integer not null default 0;
+
+create index if not exists idx_ntsb_cases_event_date on ntsb.cases (event_date);
+create index if not exists idx_ntsb_cases_ntsb_number on ntsb.cases (ntsb_number);
+create index if not exists idx_ntsb_cases_country_code on ntsb.cases (country_code);
+create index if not exists idx_ntsb_cases_state on ntsb.cases (state);
+create index if not exists idx_ntsb_cases_severity on ntsb.cases (severity);
+create index if not exists idx_ntsb_cases_fatalities on ntsb.cases (fatalities desc nulls last);
+create index if not exists idx_ntsb_cases_total_injuries on ntsb.cases (total_injuries desc nulls last);
+create index if not exists idx_ntsb_cases_source_updated on ntsb.cases (source_updated_at);
+create index if not exists idx_ntsb_cases_search_tsv on ntsb.cases using gin (search_tsv);
+create index if not exists idx_ntsb_aircraft_registration on ntsb.aircraft (upper(registration));
+create index if not exists idx_ntsb_aircraft_make on ntsb.aircraft (lower(make));
+create index if not exists idx_ntsb_aircraft_model on ntsb.aircraft (lower(model));
+create index if not exists idx_ntsb_events_case_mkey on ntsb.events (case_mkey);
+create index if not exists idx_ntsb_findings_case_mkey on ntsb.findings (case_mkey);
+create index if not exists idx_ntsb_airports_case_mkey on ntsb.airports (case_mkey);
+create index if not exists idx_ntsb_detail_cache_fetched_at on ntsb.detail_cache (fetched_at);
+
 -- One-time cleanup: legacy function from the old `documentos` schema.
 drop function if exists buscar_similares;
 

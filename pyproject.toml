@@ -23,6 +23,13 @@ omit = [
     "rag/query_test.py",
     "rag/query_test_ntsb.py",
     "rag/setup_security.py",
+    "ntsb/postgres_repository.py",
+    "ntsb/repository.py",
+    "ntsb/sync/api_client.py",
+    "ntsb/sync/cli.py",
+    "ntsb/sync/config.py",
+    "ntsb/sync/normalizer.py",
+    "ntsb/sync/service.py",
 ]
 
 [tool.coverage.report]

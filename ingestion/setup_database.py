@@ -63,9 +63,14 @@ def verify_schema():
                         (select count(*) from information_schema.tables
                          where table_schema = 'public' and table_name = 'parent_chunks'),
                         (select count(*) from pg_indexes
-                         where tablename = 'documents'),
+                         where schemaname = 'public'
+                           and indexname in (
+                               'idx_documents_aircraft', 'idx_documents_parent_id',
+                               'idx_documents_embedding', 'idx_documents_tsv'
+                           )),
                         (select count(*) from pg_indexes
-                         where tablename = 'parent_chunks'),
+                         where schemaname = 'public'
+                           and indexname in ('idx_parent_chunks_parent_id')),
                         (select count(*) from pg_proc p
                          join pg_namespace n on n.oid = p.pronamespace
                          where n.nspname = 'public' and p.proname = 'find_similar'),
@@ -81,6 +86,12 @@ def verify_schema():
                                'datasets', 'cases', 'evidence', 'runs',
                                'case_runs', 'retrieved_items', 'context_items',
                                'metrics', 'feedback'
+                           )),
+                        (select count(*) from information_schema.tables
+                         where table_schema = 'ntsb'
+                           and table_name in (
+                               'cases', 'aircraft', 'events', 'findings', 'airports',
+                               'detail_cache', 'sync_state', 'sync_runs'
                            ))
                 """)
                 row = cursor.fetchone()
@@ -89,7 +100,7 @@ def verify_schema():
                     extension, table_docs, table_parents,
                     idx_docs, idx_parents, func_similar,
                     func_similar_parents, func_similar_parents_hybrid,
-                    eval_tables,
+                    eval_tables, ntsb_tables,
                 ) = row
         finally:
             connection.close()
@@ -98,12 +109,13 @@ def verify_schema():
             extension == 1
             and table_docs == 1
             and table_parents == 1
-            and idx_docs == 6
-            and idx_parents == 3
+            and idx_docs == 4
+            and idx_parents == 1
             and func_similar == 1
             and func_similar_parents == 1
             and func_similar_parents_hybrid == 1
             and eval_tables == 9
+            and ntsb_tables == 8
         )
         if ok:
             return True, "Schema verified."
@@ -114,7 +126,7 @@ def verify_schema():
             f"find_similar={func_similar}, "
             f"find_similar_parents={func_similar_parents}, "
             f"find_similar_parents_hybrid={func_similar_parents_hybrid}, "
-            f"evaluation_tables={eval_tables}"
+            f"evaluation_tables={eval_tables}, ntsb_tables={ntsb_tables}"
         )
     except Exception as e:
         return False, f"Schema check failed: {e}"

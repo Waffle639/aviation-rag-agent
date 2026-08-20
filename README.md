@@ -79,19 +79,28 @@ Input validation, local Prompt Guard, OpenAI moderation and output leak checks f
 
 ## NTSB integration
 
-The project also includes a separate live-data path for structured aviation accident records from the NTSB public API. It does not add NTSB records to the PostgreSQL/vector corpus.
+The project also includes a structured aviation accident index from the NTSB public API. NTSB records are not embedded into the manual/vector corpus; they live in a separate relational schema optimised for exact filters, counts and rankings.
 
-The NTSB flow is implemented in `ntsb/` and `rag/generator.py`:
+The NTSB architecture has two explicit paths:
 
-- A planner converts the natural-language question into a bounded `NTSBSearchQuery` using a strict JSON schema.
-- The search service supports case detail by NTSB number or `mkey`, registration searches, and date-range searches in aviation mode.
-- Results are normalised to `NTSBCase` objects and filtered locally for fields such as aircraft, location, country, severity, investigation status and descriptive text.
-- Pagination, date windows, result limits and detail hydration are bounded by configuration. Independent detail requests can run concurrently within the configured limit.
-- The generator answers only from the returned NTSB records, cites the NTSB case number when available, reports truncated searches, and abstains with `I don't have that information in the NTSB records.` when the records do not support an answer.
+- **Synchronization:** `NTSB API -> normalizer -> PostgreSQL ntsb schema -> checkpoint`.
+- **Query:** `question -> planner -> PostgreSQL repository -> optional selected-case detail refresh -> grounded answer`.
 
-The API client uses the subscription key from `NTSB_API_KEY`, sends the configured User-Agent, and applies retries for transient failures. The remaining `NTSB_API_*` variables in `.env.example` control the endpoint, timeout, pagination, search windows, hydration and concurrency limits.
+The API key is used by the sync/detail process, not by broad interactive searches. Interactive questions never scan historical ranges through the API. Rankings such as “most deaths in the past 10 years” and counts are computed by PostgreSQL over the local index.
 
-To run the interactive NTSB query flow after configuring `.env`:
+Useful commands:
+
+```bash
+python -m ntsb.sync.cli backfill
+python -m ntsb.sync.cli incremental
+python -m ntsb.sync.cli status
+```
+
+Backfill and incremental sync hydrate selected case details by default so fields such as fatalities, probable cause, events and findings are available for SQL rankings and generated answers. Use `--summary-only` only for diagnostics.
+
+Backfill skips cases whose `mkey` already exists, so reruns are fast and do not overwrite enriched records. Use `python -m ntsb.sync.cli backfill --refresh-existing` only when intentionally rebuilding existing records from the API.
+
+To run the interactive NTSB query flow after the index has been populated:
 
 ```bash
 python -m rag.query_test_ntsb
@@ -137,7 +146,7 @@ The dashboard automatically chooses a compatible baseline from the same dataset.
 ```text
 ingestion/       document cleaning, parent-child chunking and embedding/upsert
 rag/             retrieval, generation, guardrails and structured results
-ntsb/            NTSB API client, query planning, case normalisation and search
+ntsb/            NTSB planner, PostgreSQL repository and API synchronization
 assets/          responsive SVG diagrams used by this README
 evaluation/      dataset runner, manifest handling and deterministic metrics
 dashboard/       read-only Streamlit views over persisted evaluation runs
@@ -169,15 +178,16 @@ Tests:
 pytest tests
 ```
 
-The NTSB flow can be exercised independently from the indexed-document path:
+The NTSB index can be synchronized and queried independently from the indexed-document path:
 
 ```bash
+python -m ntsb.sync.cli incremental
 python -m rag.query_test_ntsb
 ```
 
 ## Current boundary and next experiment
 
-The indexed-document path is the core system. The NTSB flow is available for structured accident records, but it is intentionally kept outside the vector corpus and is not yet selected automatically with the manuals path. The next architectural step is a routing agent that chooses between manuals, NTSB records or both, followed by generation-quality evaluation with RAGAS-style metrics.
+The indexed-document path and the NTSB case index are separate retrieval systems over the same PostgreSQL project. The next architectural step is a routing agent that chooses between manuals, NTSB records or both, followed by generation-quality evaluation with RAGAS-style metrics.
 
 ## What "done" means here
 

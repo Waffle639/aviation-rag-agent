@@ -94,6 +94,7 @@ _SIDE_EFFECT_MODULES = (
     "ingestion.embedder",
     "rag.retrival",
     "rag.generator",
+    "rag.ntsb_pipeline",
     "rag.hybrid_debug",
     "rag.query_test",
 )

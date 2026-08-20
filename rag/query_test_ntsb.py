@@ -1,4 +1,4 @@
-"""Interactive natural-language query against the NTSB aviation API.
+"""Interactive natural-language query against the local NTSB PostgreSQL index.
 
 Usage:
     python -m rag.query_test_ntsb
@@ -23,9 +23,8 @@ logging.basicConfig(
     ],
 )
 
-from rag.generator import generate_ntsb_answer  # noqa: E402
+from rag.ntsb_pipeline import generate_ntsb_answer  # noqa: E402
 from rag.guardrails import GuardrailError, RAG_SECURITY, _get_detector  # noqa: E402
-from ntsb.client import NTSBAuthenticationError  # noqa: E402
 
 
 if __name__ == "__main__":
@@ -38,14 +37,12 @@ if __name__ == "__main__":
             sys.exit(1)
         print()
 
-    print("NTSB aviation query")
+    print("NTSB aviation index query")
     print("Example: What aviation accidents occurred in California during 2024?")
     question = input("Question: ")
     try:
         print(f"\n{generate_ntsb_answer(question)}")
     except GuardrailError as exc:
         print(f"\nBlocked: {exc}")
-    except NTSBAuthenticationError as exc:
-        print(f"\nNTSB authentication failed: {exc}")
     except Exception as exc:
         print(f"\nNTSB query failed: {exc}")

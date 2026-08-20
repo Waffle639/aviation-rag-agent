@@ -1,13 +1,5 @@
-"""NTSB aviation case search and context extraction."""
+"""NTSB structured aviation case index."""
 
-from ntsb.models import NTSBCase, NTSBSearchQuery, NTSBSearchResult
-from ntsb.search import NTSBSearchService
-from ntsb.client import NTSBAuthenticationError
+from ntsb.domain import NTSBAircraft, NTSBCase, NTSBSearchQuery, NTSBSearchResult
 
-__all__ = [
-    "NTSBCase",
-    "NTSBSearchQuery",
-    "NTSBSearchResult",
-    "NTSBSearchService",
-    "NTSBAuthenticationError",
-]
+__all__ = ["NTSBAircraft", "NTSBCase", "NTSBSearchQuery", "NTSBSearchResult"]

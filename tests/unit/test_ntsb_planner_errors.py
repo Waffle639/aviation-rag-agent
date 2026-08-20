@@ -21,8 +21,8 @@ def test_planner_escapes_untrusted_question_before_model_input():
             '{"intent":"search","ntsb_number":null,"mkey":null,"registration":null,'
             '"start_date":null,"end_date":null,"make":null,"model":null,"location":null,'
             '"state":null,"country":null,"severity":null,"event_type":null,'
-            '"investigation_status":null,"text":null,"needs_detail":false,'
-            '"sort":"date_desc","limit":1}'
+            '"investigation_status":null,"text":null,"needs_detail":false,"sort":"date_desc","limit":1,'
+            '"goal":"search","ranking_field":null,"ranking_order":"desc","requested_fields":[]}'
         )
     )
 
