@@ -291,6 +291,22 @@ class TestGetDetector:
             guardrails._get_detector()
 
 
+def test_warmup_security_loads_detector_when_enabled(monkeypatch):
+    monkeypatch.setattr(guardrails, "RAG_SECURITY", True)
+    with mock.patch.object(guardrails, "_get_detector") as get_detector:
+        guardrails.warmup_security()
+
+    get_detector.assert_called_once_with()
+
+
+def test_warmup_security_skips_detector_when_disabled(monkeypatch):
+    monkeypatch.setattr(guardrails, "RAG_SECURITY", False)
+    with mock.patch.object(guardrails, "_get_detector") as get_detector:
+        guardrails.warmup_security()
+
+    get_detector.assert_not_called()
+
+
 def test_openai_client_is_created_lazily_and_cached(monkeypatch):
     monkeypatch.setattr(guardrails, "_openai_client", None)
     fake_client = mock.Mock()

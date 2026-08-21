@@ -54,6 +54,12 @@ def _get_detector():
     return _detector
 
 
+def warmup_security():
+    """Load local security weights at application startup when security is enabled."""
+    if RAG_SECURITY:
+        _get_detector()
+
+
 class PromptGuardDetector:
     # The model caps at 512 tokens; leave room for special tokens.
     WINDOW_TOKENS = 510

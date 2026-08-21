@@ -8,6 +8,10 @@ psycopg2-binary
 pgvector
 supabase
 langsmith
+langchain-core
+langchain-openai
+langgraph>=1.2
+pydantic>=2.7
 # torch: pip install torch --index-url https://download.pytorch.org/whl/cpu
 # (CPU wheel is ~200MB vs ~2GB with CUDA; 'python configure.py' does this for you)
 torch
