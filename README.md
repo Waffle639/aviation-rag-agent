@@ -88,23 +88,27 @@ The NTSB architecture has two explicit paths:
 
 The API key is used by the sync/detail process, not by broad interactive searches. Interactive questions never scan historical ranges through the API. Rankings such as “most deaths in the past 10 years” and counts are computed by PostgreSQL over the local index.
 
-Useful commands:
-
-```bash
-python -m ntsb.sync.cli backfill
-python -m ntsb.sync.cli incremental
-python -m ntsb.sync.cli status
-```
-
 Backfill and incremental sync hydrate selected case details by default so fields such as fatalities, probable cause, events and findings are available for SQL rankings and generated answers. Use `--summary-only` only for diagnostics.
 
-Backfill skips cases whose `mkey` already exists, so reruns are fast and do not overwrite enriched records. Use `python -m ntsb.sync.cli backfill --refresh-existing` only when intentionally rebuilding existing records from the API.
+Backfill skips cases whose `mkey` already exists, so reruns are fast and do not overwrite enriched records. Existing records are refreshed only when explicitly requested.
 
 To run the interactive NTSB query flow after the index has been populated:
 
-```bash
-python -m rag.query_test_ntsb
+
+## The agent
+
+The controlled agent is the orchestration layer above the document retriever and the NTSB index. It is a bounded LangGraph workflow, not an open-ended tool loop. Its main job is deciding what evidence is needed before any answer is written:
+
+```text
+question -> validate -> route -> search -> optional NTSB detail -> synthesize -> validate
 ```
+
+- **Route:** chooses `documents`, `accidents`, `both` or `abstain`. The model returns a structured decision; a deterministic router is used if the model is unavailable or fails.
+- **Search:** runs the selected sources, in parallel when both are needed. Document search uses the existing hybrid retriever; accident search uses the local NTSB PostgreSQL index.
+- **Detail:** decides whether a selected NTSB case needs a live detail refresh. Counts and rankings stay on the local index, and broad API scans are not part of the agent loop.
+- **Recover:** records tool failures and continues with the evidence that remains available instead of hiding a partial result.
+- **Synthesize:** produces a structured answer with the evidence IDs it used and any limitations.
+- **Validate:** removes invalid citations, forces abstention when there is no evidence, and applies the existing input/output security checks.
 
 ## Evaluation is the decision loop
 
@@ -146,6 +150,7 @@ The dashboard automatically chooses a compatible baseline from the same dataset.
 ```text
 ingestion/       document cleaning, parent-child chunking and embedding/upsert
 rag/             retrieval, generation, guardrails and structured results
+agent/           controlled routing, tools, evidence policies and synthesis
 ntsb/            NTSB planner, PostgreSQL repository and API synchronization
 assets/          responsive SVG diagrams used by this README
 evaluation/      dataset runner, manifest handling and deterministic metrics
@@ -155,39 +160,15 @@ data/raw/        source manuals, PDF text extracts and aviation extracts
 tests/           unit, integration and end-to-end coverage
 ```
 
-The implementation intentionally avoids LangChain abstractions for the core path. LangSmith is used where it adds value: tracing and visual inspection of runs.
+The core retrieval path intentionally avoids LangChain abstractions. The controlled agent uses LangGraph for orchestration, while LangSmith provides tracing and visual inspection where it adds value.
 
 ## Running the project
 
-Operational setup is intentionally kept secondary to the design. For maintainers who want to reproduce the pipeline:
-
-```bash
-python configure.py
-```
-
-Configuration lives in `.env`; the expected variables are documented in `.env.example`. The evaluation dashboard has its own lightweight dependencies:
-
-```bash
-python -m pip install -r dashboard/requirements.txt
-python -m streamlit run dashboard/app.py
-```
-
-Tests:
-
-```bash
-pytest tests
-```
-
-The NTSB index can be synchronized and queried independently from the indexed-document path:
-
-```bash
-python -m ntsb.sync.cli incremental
-python -m rag.query_test_ntsb
-```
+Operational setup is intentionally kept secondary to the design. Configuration lives in `.env`; the expected variables are documented in `.env.example`. The dashboard and test suite are maintained as separate project surfaces.
 
 ## Current boundary and next experiment
 
-The indexed-document path and the NTSB case index are separate retrieval systems over the same PostgreSQL project. The next architectural step is a routing agent that chooses between manuals, NTSB records or both, followed by generation-quality evaluation with RAGAS-style metrics.
+The indexed-document path and the NTSB case index remain separate retrieval systems over the same PostgreSQL project. The controlled agent can route to either source or both and keeps live NTSB detail bounded. The next experiment is generation-quality evaluation with RAGAS-style metrics.
 
 ## What "done" means here
 
