@@ -166,6 +166,8 @@ The core retrieval path intentionally avoids LangChain abstractions. The control
 
 Operational setup is intentionally kept secondary to the design. Configuration lives in `.env`; the expected variables are documented in `.env.example`. The dashboard and test suite are maintained as separate project surfaces.
 
+Docker support is documented in [DOCKER.md](DOCKER.md). Docker packages the dashboard and worker runtimes while Supabase remains the database through `DATABASE_URL`.
+
 ## Current boundary and next experiment
 
 The indexed-document path and the NTSB case index remain separate retrieval systems over the same PostgreSQL project. The controlled agent can route to either source or both and keeps live NTSB detail bounded. The next experiment is generation-quality evaluation with RAGAS-style metrics.

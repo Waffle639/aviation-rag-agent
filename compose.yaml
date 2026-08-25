@@ -1,0 +1,49 @@
+services:
+  dashboard:
+    build:
+      context: .
+      target: dashboard
+    image: aviation-rag-dashboard:local
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:8501:8501"
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      target: worker
+    image: aviation-rag-worker:local
+    profiles:
+      - tools
+    env_file:
+      - .env
+    environment:
+      HF_HOME: /opt/huggingface
+      TRANSFORMERS_CACHE: /opt/huggingface/transformers
+    volumes:
+      - hf-cache:/opt/huggingface
+      - ./data:/app/data
+      - ./logs:/app/logs
+    stdin_open: true
+    tty: true
+
+  model-init:
+    image: aviation-rag-worker:local
+    build:
+      context: .
+      target: worker
+    profiles:
+      - tools
+    env_file:
+      - .env
+    environment:
+      HF_HOME: /opt/huggingface
+      TRANSFORMERS_CACHE: /opt/huggingface/transformers
+    volumes:
+      - hf-cache:/opt/huggingface
+    command: ["python", "-m", "rag.setup_security", "--download"]
+
+volumes:
+  hf-cache:

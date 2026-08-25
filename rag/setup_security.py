@@ -5,6 +5,7 @@ Each check returns (ok, message); configure.py decides what to do with them.
 Run standalone with: python -m rag.setup_security
 """
 
+import argparse
 import importlib
 import logging
 import os
@@ -126,11 +127,36 @@ def security_ready():
     return check_torch()[0] and check_hf_token()[0] and check_model()[0]
 
 
-if __name__ == "__main__":
-    steps = [check_torch, check_hf_token, check_license, check_model, smoke_test]
+def ensure_model_downloaded():
+    ok, msg = check_model()
+    if ok:
+        return ok, msg
+    return download_model()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--download",
+        action="store_true",
+        help="download Prompt Guard into the local Hugging Face cache if missing",
+    )
+    args = parser.parse_args()
+
+    steps = [check_torch, check_hf_token, check_license]
+    if args.download:
+        steps.append(ensure_model_downloaded)
+    else:
+        steps.append(check_model)
+    steps.append(smoke_test)
+
     failed = 0
     for check in steps:
         ok, msg = check()
         print(f"  {'ok' if ok else 'FAIL':6s} {check.__name__}: {msg}")
         failed += 0 if ok else 1
     sys.exit(1 if failed else 0)
+
+
+if __name__ == "__main__":
+    main()
