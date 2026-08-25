@@ -3,18 +3,18 @@ from unittest import mock
 
 
 def test_source_file_helpers_reject_external_paths_and_generate_candidates(import_fresh):
-    with import_fresh("rag.retrival") as modules:
-        retrival = modules["rag.retrival"]
+    with import_fresh("rag.retrieval") as modules:
+        retrieval = modules["rag.retrieval"]
 
-        assert retrival._document_id_from_source_file("outside/file.txt") is None
-        assert list(retrival._candidate_source_files({})) == []
+        assert retrieval._document_id_from_source_file("outside/file.txt") is None
+        assert list(retrieval._candidate_source_files({})) == []
         assert list(
-            retrival._candidate_source_files(
+            retrieval._candidate_source_files(
                 {"aircraft": "Airbus A320", "font": "Wikipedia"}
             )
         ) == ["data/raw/wiki/Airbus A320.txt", "data/raw/wiki/Airbus_A320.txt"]
         assert list(
-            retrival._candidate_source_files(
+            retrieval._candidate_source_files(
                 {"aircraft": "A320", "font": "pdf_text"}
             )
         ) == ["data/raw/pdf_to_txt/A320.txt"]
@@ -36,12 +36,12 @@ def test_manifest_metadata_wins_over_fallback_hash(import_fresh, tmp_path):
         encoding="utf-8",
     )
 
-    with import_fresh("rag.retrival") as modules:
-        retrival = modules["rag.retrival"]
-        retrival.MANIFEST_PATH = manifest_path
-        retrival._manifest_by_path.cache_clear()
+    with import_fresh("rag.retrieval") as modules:
+        retrieval = modules["rag.retrieval"]
+        retrieval.MANIFEST_PATH = manifest_path
+        retrieval._manifest_by_path.cache_clear()
 
-        rows = retrival._fill_missing_metadata(
+        rows = retrieval._fill_missing_metadata(
             [{"aircraft": "A320", "font": "wiki", "texto": "fact"}]
         )
 
@@ -58,9 +58,9 @@ def test_manifest_metadata_wins_over_fallback_hash(import_fresh, tmp_path):
 
 
 def test_existing_metadata_and_token_count_are_not_overwritten(import_fresh):
-    with import_fresh("rag.retrival") as modules:
-        retrival = modules["rag.retrival"]
-        rows = retrival._fill_missing_metadata(
+    with import_fresh("rag.retrieval") as modules:
+        retrieval = modules["rag.retrieval"]
+        rows = retrieval._fill_missing_metadata(
             [
                 {
                     "document_id": "known",
@@ -82,13 +82,13 @@ def test_existing_metadata_and_token_count_are_not_overwritten(import_fresh):
 
 
 def test_search_context_returns_empty_rows_without_losing_query_contract(import_fresh):
-    with import_fresh("rag.retrival") as modules:
-        retrival = modules["rag.retrival"]
+    with import_fresh("rag.retrieval") as modules:
+        retrieval = modules["rag.retrieval"]
         patches = modules["__patches__"]
-        retrival.embed_text = mock.Mock(return_value=[0.1])
+        retrieval.embed_text = mock.Mock(return_value=[0.1])
         patches.cursor.fetchall.return_value = []
 
-        assert retrival.search_context("unknown", aircraft=None, top_k=0) == []
+        assert retrieval.search_context("unknown", aircraft=None, top_k=0) == []
 
     sql, params = patches.cursor.execute.call_args.args
     assert "find_similar_parents_hybrid" in sql

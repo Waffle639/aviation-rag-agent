@@ -10,7 +10,7 @@ eval/         RAG quality evals (golden dataset) — real services, needs --live
 
 Why the import machinery exists
 -------------------------------
-ingestion/embedder.py, rag/retrival.py and rag/hybrid_debug.py open a real
+ingestion/embedder.py, rag/retrieval.py and rag/hybrid_debug.py open a real
 Postgres connection AT IMPORT TIME, and rag/generator.py refuses to import
 without OPENAI_API_KEY. Unit tests therefore import those modules through the
 ``import_fresh`` fixture, which patches psycopg2.connect / OpenAI /
@@ -92,7 +92,7 @@ def pytest_collection_modifyitems(config, items):
 #: Modules that open DB connections or build API clients at import time.
 _SIDE_EFFECT_MODULES = (
     "ingestion.embedder",
-    "rag.retrival",
+    "rag.retrieval",
     "rag.generator",
     "rag.ntsb_pipeline",
     "rag.hybrid_debug",

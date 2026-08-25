@@ -66,7 +66,7 @@ class LazyDocumentRepository:
 
     async def search(self, query: str, aircraft: str | None = None, top_k: int = 5) -> list[dict[str, Any]]:
         def _run() -> list[dict[str, Any]]:
-            from rag.retrival import search_context
+            from rag.retrieval import search_context
 
             return list(search_context(query, aircraft=aircraft, top_k=top_k))
 

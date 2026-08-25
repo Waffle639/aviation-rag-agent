@@ -3,26 +3,26 @@ import hashlib
 
 
 def test_search_context_executes_hybrid_query(import_fresh):
-    with import_fresh("rag.retrival") as modules:
-        retrival = modules["rag.retrival"]
+    with import_fresh("rag.retrieval") as modules:
+        retrieval = modules["rag.retrieval"]
         patches = modules["__patches__"]
         rows = [{"chunk_id": "parent-1", "similarity": 0.1234}]
 
-        retrival.embed_text = mock.Mock(return_value=[0.1, 0.2])
+        retrieval.embed_text = mock.Mock(return_value=[0.1, 0.2])
         patches.cursor.fetchall.return_value = rows
 
-        result = retrival.search_context("What is Vso?", aircraft="Cessna", top_k=3)
+        result = retrieval.search_context("What is Vso?", aircraft="Cessna", top_k=3)
 
     assert result == [{"chunk_id": "parent-1", "similarity": 0.1234, "token_count": 0}]
-    retrival.embed_text.assert_called_once_with("What is Vso?")
+    retrieval.embed_text.assert_called_once_with("What is Vso?")
     sql, params = patches.cursor.execute.call_args.args
     assert "find_similar_parents_hybrid" in sql
     assert params[1:] == ("What is Vso?", "Cessna", 3)
 
 
 def test_search_context_backfills_document_id_from_manifest_shape(import_fresh):
-    with import_fresh("rag.retrival") as modules:
-        retrival = modules["rag.retrival"]
+    with import_fresh("rag.retrieval") as modules:
+        retrieval = modules["rag.retrieval"]
         patches = modules["__patches__"]
         patches.cursor.fetchall.return_value = [
             {
@@ -38,9 +38,9 @@ def test_search_context_backfills_document_id_from_manifest_shape(import_fresh):
                 "rrf_score": 0.5,
             }
         ]
-        retrival.embed_text = mock.Mock(return_value=[0.1, 0.2])
+        retrieval.embed_text = mock.Mock(return_value=[0.1, 0.2])
 
-        result = retrival.search_context("When did the 747 first fly?")
+        result = retrieval.search_context("When did the 747 first fly?")
 
     assert result[0]["document_id"] == "f3d8f5418129b47f"
     assert result[0]["source_file"] == "data/raw/wiki/Boeing_747.txt"
@@ -48,21 +48,21 @@ def test_search_context_backfills_document_id_from_manifest_shape(import_fresh):
 
 
 def test_manifest_loader_returns_empty_when_manifest_is_missing(import_fresh, tmp_path):
-    with import_fresh("rag.retrival") as modules:
-        retrival = modules["rag.retrival"]
-        retrival.MANIFEST_PATH = tmp_path / "missing.json"
-        retrival._manifest_by_path.cache_clear()
+    with import_fresh("rag.retrieval") as modules:
+        retrieval = modules["rag.retrieval"]
+        retrieval.MANIFEST_PATH = tmp_path / "missing.json"
+        retrieval._manifest_by_path.cache_clear()
 
-        assert retrival._manifest_by_path() == {}
+        assert retrieval._manifest_by_path() == {}
 
 
 def test_fill_missing_metadata_hashes_source_file_without_manifest(import_fresh, tmp_path):
-    with import_fresh("rag.retrival") as modules:
-        retrival = modules["rag.retrival"]
-        retrival.MANIFEST_PATH = tmp_path / "missing.json"
-        retrival._manifest_by_path.cache_clear()
+    with import_fresh("rag.retrieval") as modules:
+        retrieval = modules["rag.retrieval"]
+        retrieval.MANIFEST_PATH = tmp_path / "missing.json"
+        retrieval._manifest_by_path.cache_clear()
 
-        rows = retrival._fill_missing_metadata(
+        rows = retrieval._fill_missing_metadata(
             [{"texto": "abcd", "source_file": "data/raw/wiki/Custom.txt"}]
         )
 
@@ -73,11 +73,11 @@ def test_fill_missing_metadata_hashes_source_file_without_manifest(import_fresh,
 
 
 def test_fill_missing_metadata_uses_pdf_manifest_candidate(import_fresh):
-    with import_fresh("rag.retrival") as modules:
-        retrival = modules["rag.retrival"]
-        retrival._manifest_by_path.cache_clear()
+    with import_fresh("rag.retrieval") as modules:
+        retrieval = modules["rag.retrieval"]
+        retrieval._manifest_by_path.cache_clear()
 
-        rows = retrival._fill_missing_metadata(
+        rows = retrieval._fill_missing_metadata(
             [{"texto": "manual text", "aircraft": "AC_A320_0624", "font": "pdf"}]
         )
 
@@ -86,9 +86,9 @@ def test_fill_missing_metadata_uses_pdf_manifest_candidate(import_fresh):
 
 
 def test_fill_missing_metadata_without_aircraft_still_estimates_tokens(import_fresh):
-    with import_fresh("rag.retrival") as modules:
-        retrival = modules["rag.retrival"]
+    with import_fresh("rag.retrieval") as modules:
+        retrieval = modules["rag.retrieval"]
 
-        rows = retrival._fill_missing_metadata([{"texto": "abcdefgh"}])
+        rows = retrieval._fill_missing_metadata([{"texto": "abcdefgh"}])
 
     assert rows == [{"texto": "abcdefgh", "token_count": 2}]

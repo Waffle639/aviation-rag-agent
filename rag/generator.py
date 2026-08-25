@@ -38,7 +38,7 @@ openai_client = wrap_openai(OpenAI(api_key=_openai_key))
 
 def search_context(question, aircraft=None, top_k=5):
     """Load the existing retrieval lazily so NTSB can run without PostgreSQL."""
-    from rag.retrival import search_context as _search_context
+    from rag.retrieval import search_context as _search_context
 
     return _search_context(question, aircraft=aircraft, top_k=top_k)
 
