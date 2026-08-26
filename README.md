@@ -1,179 +1,104 @@
+<div align="center">
+
 # Aviation RAG Agent
+
+**An evidence-first RAG system for technical aviation research.**
+
+</div>
 
 [![Core RAG pipeline](assets/core-rag-pipeline.svg)](assets/core-rag-pipeline.svg)
 
-This is not primarily a package for someone to download and run. It is a working case study: every important layer is implemented explicitly so that retrieval quality, context selection, latency and failure modes can be inspected instead of hidden behind a framework.
+## How it works
 
-The corpus combines aircraft manuals, specification sheets and curated aviation extracts. The system answers technical questions with source-aware context, citations and an explicit abstention path when the evidence is missing.
-
-## Why this project exists
-
-The interesting problem is not generating fluent aviation text. It is deciding whether the answer is supported by the right evidence, then being able to explain why a change improved or damaged the system.
-
-That leads to four design priorities:
-
-- **Retrieval before generation:** improve the evidence path before tuning the prompt or model.
-- **Context with structure:** search small units for precision, but give the model enough surrounding material to understand the fact.
-- **Evaluation as a first-class system:** every experiment is stored, reproducible and comparable against a baseline.
-- **Visibility over convenience:** the database, traces and dashboard preserve what happened at each stage.
-
-The main path is deliberately small:
-
-| Stage | What happens | Why it matters |
-| --- | --- | --- |
-| **Ingest** | PDFs and text extracts are cleaned, normalised and assigned stable provenance. | A result can be traced back to a document and source file. |
-| **Structure** | Each document becomes larger `parent` windows and overlapping smaller `child` chunks. | Matching stays precise without starving generation of context. |
-| **Index** | Child chunks receive embeddings; PostgreSQL builds a generated `tsvector` and GIN index. | Semantic and exact-term retrieval are available from the same corpus. |
-| **Retrieve** | Vector and keyword rankings are fused with Reciprocal Rank Fusion, then collapsed to unique parents. | Exact aviation tokens and semantic questions can both succeed. |
-| **Generate** | The model sees only selected parent context and must cite the aircraft and source. | The answer remains grounded and auditable. |
-| **Evaluate** | Runs persist rankings, context, answers, timings, tokens and metrics. | A change can be judged by evidence, not by a convincing demo query. |
-
-## Decisions that shape the system
-
-### 1. Parent-child chunking
-
-Chunking is implemented in `ingestion/chunking.py`, rather than delegated to a framework splitter.
+The agent keeps each step explicit and bounded before an answer is produced:
 
 ```text
-document
-  -> paragraph-aligned parents      ~2,000 characters
-  -> overlapping searchable children ~500 characters, 100 overlap
+user input + session context
+  -> normalize -> Prompt Guard -> moderation
+  -> resolve follow-up into a standalone question
+  -> route
+       |-> documents: parent-child hybrid retrieval
+       |-> accidents: local NTSB index -> optional API case detail
+       |-> both: run both evidence paths in parallel
+       `-> abstain: stop when the sources cannot support the request
+  -> rank and fit evidence into the context budget
+  -> grounded synthesis
+  -> citation validation -> output leak check -> moderation
+  -> answer + persisted turn + LangSmith trace
 ```
 
-Children are embedded because small passages give more focused matches. Parents are not embedded; they are the richer context returned to the model. In short: **search small, return big**.
+| Capability | What it does |
+| --- | --- |
+| **Parent-child retrieval** | Searches small passages for precision and returns larger parent context for generation. |
+| **Hybrid search** | Combines pgvector semantic search with PostgreSQL full-text search through Reciprocal Rank Fusion. |
+| **Official NTSB records** | Synchronizes official accident and incident records from the external NTSB API into a relational index for deterministic filters, counts and rankings. |
+| **Controlled routing** | Selects technical documents, NTSB records, both sources or abstention before generating an answer. |
+| **Grounded answers** | Uses only retrieved evidence, preserves numeric precision and cites the supporting sources. |
+| **Conversation memory** | PostgreSQL sessions preserve turns; bounded summaries resolve follow-ups without treating conversation history as aviation evidence. **In progress.** |
 
-This also makes retrieval measurable at two levels: whether the right child was found, and whether the final parent context was useful without repeating the same document several times.
+Interactive NTSB queries run against the synchronized local index. The external API is reserved for synchronization and selected-case detail, keeping broad searches deterministic and API usage bounded.
 
-### 2. Hybrid search instead of vector-only search
+## Evaluation
 
-Vector similarity is good at meaning, but it can underweight exact identifiers and aviation notation such as `V1`, `Vso`, model variants or part numbers. PostgreSQL therefore runs two independent retrieval legs:
+Answer quality is bounded by the quality, coverage and provenance of the source documents, and by whether retrieval selects the right evidence. The evaluation loop therefore measures the evidence path before attributing an improvement to the model.
 
-- HNSW over `text-embedding-3-small` vectors.
-- GIN full-text search over a generated English `tsvector` column.
-
-The database function `find_similar_parents_hybrid` fuses ranks with:
-
-```text
-RRF(parent) = sum(1 / (60 + rank))
-```
-
-Rank fusion avoids putting cosine distance and keyword scores on an arbitrary shared scale. It also keeps the retrieval contract in the database, close to the indexes, rather than scattering ranking logic through application code.
-
-### 3. Idempotent, observable ingestion
-
-Stable document, parent and child IDs make ingestion safe to repeat. Children and parents are upserted separately, embedding calls run in batches, API and database operations retry with backoff, and failed child IDs are reported for selective re-runs.
-
-Before indexing, every child is scanned for prompt injection. Suspicious or unscannable material blocks ingestion and is logged for review rather than silently discarded. This matters for technical documents because a false positive may still contain legitimate operational language.
-
-### 4. Grounded generation with an abstention path
-
-The generator receives retrieved context inside explicit data boundaries. Its contract is intentionally conservative:
-
-- use only the supplied context;
-- cite the aircraft and source;
-- report conflicting values instead of choosing silently;
-- preserve numeric precision;
-- return `I don't have that information in my sources.` when the corpus does not support an answer.
-
-Input validation, local Prompt Guard, OpenAI moderation and output leak checks form a fail-closed defence in depth. Security is applied when untrusted text enters the system: both at ingestion and at query time.
-
-## NTSB integration
-
-The project also includes a structured aviation accident index from the NTSB public API. NTSB records are not embedded into the manual/vector corpus; they live in a separate relational schema optimised for exact filters, counts and rankings.
-
-The NTSB architecture has two explicit paths:
-
-- **Synchronization:** `NTSB API -> normalizer -> PostgreSQL ntsb schema -> checkpoint`.
-- **Query:** `question -> planner -> PostgreSQL repository -> optional selected-case detail refresh -> grounded answer`.
-
-The API key is used by the sync/detail process, not by broad interactive searches. Interactive questions never scan historical ranges through the API. Rankings such as “most deaths in the past 10 years” and counts are computed by PostgreSQL over the local index.
-
-Backfill and incremental sync hydrate selected case details by default so fields such as fatalities, probable cause, events and findings are available for SQL rankings and generated answers. Use `--summary-only` only for diagnostics.
-
-Backfill skips cases whose `mkey` already exists, so reruns are fast and do not overwrite enriched records. Existing records are refreshed only when explicitly requested.
-
-To run the interactive NTSB query flow after the index has been populated:
-
-
-## The agent
-
-The controlled agent is the orchestration layer above the document retriever and the NTSB index. It is a bounded LangGraph workflow, not an open-ended tool loop. Its main job is deciding what evidence is needed before any answer is written:
-
-```text
-question -> validate -> route -> search -> optional NTSB detail -> synthesize -> validate
-```
-
-- **Route:** chooses `documents`, `accidents`, `both` or `abstain`. The model returns a structured decision; a deterministic router is used if the model is unavailable or fails.
-- **Search:** runs the selected sources, in parallel when both are needed. Document search uses the existing hybrid retriever; accident search uses the local NTSB PostgreSQL index.
-- **Detail:** decides whether a selected NTSB case needs a live detail refresh. Counts and rankings stay on the local index, and broad API scans are not part of the agent loop.
-- **Recover:** records tool failures and continues with the evidence that remains available instead of hiding a partial result.
-- **Synthesize:** produces a structured answer with the evidence IDs it used and any limitations.
-- **Validate:** removes invalid citations, forces abstention when there is no evidence, and applies the existing input/output security checks.
-
-## Evaluation is the decision loop
-
-The project treats evaluation as infrastructure, not as a final report. The runner executes the same RAG path used by the application and persists the complete evidence chain for every case.
+- **Golden cases:** expected answers and evidence remain isolated from the searchable corpus.
+- **Retrieval quality:** `Recall@k`, `MRR` and `nDCG@k` measure whether the expected evidence was found and where it ranked.
+- **Efficiency:** estimated context and prompt tokens, plus provider input, output and total usage when available, are stored alongside retrieval, context-building, generation and end-to-end latency.
+- **Traceability:** persisted run data and LangSmith traces connect each answer to its retrieval, selected context, configuration, timings and failures.
 
 [![Evaluation loop](assets/evaluation-loop.svg)](assets/evaluation-loop.svg)
 
-The first dataset, `aviation_golden_v1`, contains 36 English cases built from the downloaded sources, including an explicit out-of-corpus question. Golden answers and evidence live in the separate `evaluation` PostgreSQL schema; they never become searchable RAG context.
+The initial `aviation_golden_v1` dataset contains 36 numeric, variant-sensitive, document-structure and out-of-corpus cases. The Streamlit dashboard supports run comparison and case-level evidence inspection.
 
-The deterministic retrieval layer currently tracks:
+## Security
 
-- `Recall@k`, `Precision@k`, `HitRate@k`, `MRR` and `nDCG@k`;
-- duplicate ratio and unique-parent ratio;
-- retrieved item count and estimated retrieved tokens;
-- latency, input/output/context tokens and recorded cost;
-- abstention decisions and the generated answer for each case.
+Security is applied where untrusted content enters and leaves the system. During ingestion, every child chunk is scanned with the locally cached `Llama-Prompt-Guard-2-86M` model. Long content is inspected through overlapping token windows; a malicious result or an unavailable detector blocks indexing instead of silently admitting unchecked text.
 
-This separation helps answer two different questions:
+At query time, Unicode normalization removes control and obfuscation characters before enforcing input and context limits. The question then passes through the local Prompt Guard detector and the OpenAI Moderation API before retrieval. Generated answers are moderated again, checked for prompt leakage and validated against the evidence IDs returned by the selected tools.
 
-1. **Did retrieval find the right evidence, and how high did it rank?**
-2. **What did the model actually receive, and what did it produce?**
+These guardrails fail closed when security is enabled: unavailable protection stops the request rather than degrading invisibly.
 
-Generation metrics such as citation correctness, faithfulness and answer correctness can be added on top of this deterministic baseline without losing the underlying retrieval evidence. LangSmith adds a visual trace for each evaluated case and its trace ID is stored with the database result.
+## Run
 
-## The dashboard
+The guided setup creates or checks `.env`, applies the PostgreSQL schema, prepares the local Prompt Guard model and verifies the NTSB API and local index.
 
-`Aviation RAG Evaluations` is a read-only Streamlit surface for inspecting decisions, not a generic chat demo. It exposes three useful views:
-
-| View | What it answers |
-| --- | --- |
-| **Overview** | Is the run healthy? How are quality, latency and resource usage trending? |
-| **Run Comparison** | Did a candidate beat the baseline, and what was the trade-off in context, cost or latency? |
-| **Case Explorer** | Which question changed, what evidence was golden, what was retrieved and what context reached generation? |
-
-The dashboard automatically chooses a compatible baseline from the same dataset. Comparisons also surface mismatches in corpus, prompt version and retrieval budget, because a raw score delta is misleading when the experiment changed more than one variable.
-
-## Repository map
-
-```text
-ingestion/       document cleaning, parent-child chunking and embedding/upsert
-rag/             retrieval, generation, guardrails and structured results
-agent/           controlled routing, tools, evidence policies and synthesis
-ntsb/            NTSB planner, PostgreSQL repository and API synchronization
-assets/          responsive SVG diagrams used by this README
-evaluation/      dataset runner, manifest handling and deterministic metrics
-dashboard/       read-only Streamlit views over persisted evaluation runs
-db/              pgvector, full-text search and evaluation schema
-data/raw/        source manuals, PDF text extracts and aviation extracts
-tests/           unit, integration and end-to-end coverage
+```bash
+python configure.py
+python configure.py --check
 ```
 
-The core retrieval path intentionally avoids LangChain abstractions. The controlled agent uses LangGraph for orchestration, while LangSmith provides tracing and visual inspection where it adds value.
+For the containerized runtime, point `DATABASE_URL` to the prepared Supabase project and run:
 
-## Running the project
+```bash
+docker compose run --rm model-init
+docker compose up -d dashboard
+docker compose run --rm worker python -m rag.query_test_memory
+```
 
-Operational setup is intentionally kept secondary to the design. Configuration lives in `.env`; the expected variables are documented in `.env.example`. The dashboard and test suite are maintained as separate project surfaces.
+Open `http://localhost:8501`. Additional agent, evaluation, synchronization and deployment commands are documented in [DOCKER.md](DOCKER.md).
 
-Docker support is documented in [DOCKER.md](DOCKER.md). Docker packages the dashboard and worker runtimes while Supabase remains the database through `DATABASE_URL`.
+## Boundaries
 
-## Current boundary and next experiment
+- Research prototype, not an operational flight or maintenance authority.
+- Retrieval evaluation is implemented; generation-quality and semantic citation evaluation are the next validation layer.
+- Supabase, OpenAI and the NTSB API remain external runtime dependencies.
 
-The indexed-document path and the NTSB case index remain separate retrieval systems over the same PostgreSQL project. The controlled agent can route to either source or both and keeps live NTSB detail bounded. The next experiment is generation-quality evaluation with RAGAS-style metrics.
+> Done means an answer supported by inspectable evidence, not one that merely sounds correct.
 
-## What "done" means here
+## Stack
 
-Not an answer that sounds right once.
+<p align="center">
+  <a href="https://skillicons.dev">
+    <img src="https://skillicons.dev/icons?i=python,pytorch,postgres,supabase,docker,git" alt="Python, PyTorch, PostgreSQL, Supabase, Docker and Git" />
+  </a>
+</p>
 
-An answer that is supported by the right source, whose retrieval path can be inspected, whose changes can be compared against a baseline, and that is willing to say when the evidence is not there.
+<p align="center">
+  <a href="DOCKER.md">Docker and deployment</a> |
+  <a href="LICENSE">License</a>
+</p>
+
+---
+
+**Feedback, questions and suggestions are always welcome. 🙌**
