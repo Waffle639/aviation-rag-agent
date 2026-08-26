@@ -40,6 +40,10 @@ def _dump(state: AgentState) -> dict[str, Any]:
     return state.model_dump()
 
 
+def _record_timing(state: AgentState, name: str, started: float) -> None:
+    state.timings_ms[name] = (time.perf_counter() - started) * 1000
+
+
 async def _run_tool(name: str, coroutine) -> tuple[Any | None, ToolCallRecord]:
     started = time.perf_counter()
     try:
@@ -68,6 +72,7 @@ def build_graph(deps: AgentDependencies):
     builder = StateGraph(GraphState)
 
     async def validate_input(raw: dict[str, Any]) -> dict[str, Any]:
+        started = time.perf_counter()
         state = _state(raw)
         from rag.guardrails import RAG_SECURITY, _run_detector, moderate, validate_question
 
@@ -77,9 +82,11 @@ def build_graph(deps: AgentDependencies):
             moderate(cleaned, label="question")
         state.question = cleaned
         state.original_question = state.original_question or cleaned
+        _record_timing(state, "validate_input", started)
         return _dump(state)
 
     async def route_question(raw: dict[str, Any]) -> dict[str, Any]:
+        started = time.perf_counter()
         state = _state(raw)
         decision, fallbacks = await router.route(
             state.question,
@@ -88,6 +95,7 @@ def build_graph(deps: AgentDependencies):
         state.route = decision
         state.standalone_question = decision.standalone_question or state.question
         state.fallbacks.extend(fallbacks)
+        _record_timing(state, "route_question", started)
         return _dump(state)
 
     def after_route(raw: dict[str, Any]) -> Literal["search_sources", "finish_abstain"]:
@@ -95,6 +103,7 @@ def build_graph(deps: AgentDependencies):
         return "finish_abstain" if route is None or route.route == "abstain" else "search_sources"
 
     async def finish_abstain(raw: dict[str, Any]) -> dict[str, Any]:
+        started = time.perf_counter()
         state = _state(raw)
         state.final_answer = GroundedAnswer(
             answer="I don't have that information in my sources.",
@@ -102,9 +111,11 @@ def build_graph(deps: AgentDependencies):
             abstained=True,
             limitations=["The question is outside the supported aviation sources."],
         )
+        _record_timing(state, "finish_abstain", started)
         return _dump(state)
 
     async def search_sources(raw: dict[str, Any]) -> dict[str, Any]:
+        started = time.perf_counter()
         state = _state(raw)
         assert state.route is not None
         tasks = []
@@ -142,23 +153,28 @@ def build_graph(deps: AgentDependencies):
                 state.accident_evidence.extend(result.evidence)
                 if result.stale:
                     state.warnings.append("The local NTSB index may be stale.")
+        _record_timing(state, "search_sources", started)
         return _dump(state)
 
     async def assess_detail_policy(raw: dict[str, Any]) -> dict[str, Any]:
+        started = time.perf_counter()
         state = _state(raw)
         state.detail_requests = select_ntsb_detail_requests(
             state.standalone_question or state.question,
             state.accident_evidence,
             max_requests=deps.max_ntsb_detail_calls,
         )
+        _record_timing(state, "assess_detail_policy", started)
         return _dump(state)
 
     def after_detail_policy(raw: dict[str, Any]) -> Literal["fetch_ntsb_detail", "synthesize"]:
         return "fetch_ntsb_detail" if _state(raw).detail_requests else "synthesize"
 
     async def fetch_ntsb_detail(raw: dict[str, Any]) -> dict[str, Any]:
+        started = time.perf_counter()
         state = _state(raw)
         if not state.detail_requests:
+            _record_timing(state, "fetch_ntsb_detail", started)
             return _dump(state)
         calls = []
         for request in state.detail_requests[: deps.max_ntsb_detail_calls]:
@@ -181,9 +197,11 @@ def build_graph(deps: AgentDependencies):
                 continue
             state.api_evidence.extend(result.evidence)
             state.warnings.extend(result.warnings)
+        _record_timing(state, "fetch_ntsb_detail", started)
         return _dump(state)
 
     async def synthesize(raw: dict[str, Any]) -> dict[str, Any]:
+        started = time.perf_counter()
         state = _state(raw)
         answer = await synthesize_answer(
             deps.generator_client,
@@ -198,9 +216,11 @@ def build_graph(deps: AgentDependencies):
             safety_margin_tokens=deps.context_safety_margin_tokens,
         )
         state.final_answer = answer
+        _record_timing(state, "synthesize", started)
         return _dump(state)
 
     async def validate_answer(raw: dict[str, Any]) -> dict[str, Any]:
+        started = time.perf_counter()
         state = _state(raw)
         if state.final_answer is not None:
             answer, fallbacks = validate_grounded_answer(state.final_answer, state.all_evidence)
@@ -212,6 +232,7 @@ def build_graph(deps: AgentDependencies):
                 if RAG_SECURITY:
                     check_output(answer.answer)
                     moderate(answer.answer, label="answer")
+        _record_timing(state, "validate_answer", started)
         return _dump(state)
 
     builder.add_node("validate_input", validate_input)

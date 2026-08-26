@@ -10,7 +10,7 @@ from typing import Any
 from langsmith import traceable
 
 from agent.prompts import SYNTHESIS_PROMPT
-from agent.schemas import EvidenceItem, FallbackRecord, GroundedAnswer
+from agent.schemas import EvidenceItem, FallbackRecord, GroundedAnswer, TokenUsage
 from rag.result import estimate_tokens
 
 
@@ -91,6 +91,35 @@ def fallback_answer(question: str, evidence: list[EvidenceItem], warnings: list[
     )
 
 
+def _response_usage(response: Any, *, prompt_input: str, answer_text: str) -> TokenUsage:
+    usage = getattr(response, "usage", None)
+    if usage is None and isinstance(response, dict):
+        usage = response.get("usage")
+    if usage is not None:
+        input_tokens = _usage_value(usage, "input_tokens", "prompt_tokens")
+        output_tokens = _usage_value(usage, "output_tokens", "completion_tokens")
+        total_tokens = _usage_value(usage, "total_tokens")
+        return TokenUsage(input_tokens=input_tokens, output_tokens=output_tokens, total_tokens=total_tokens)
+    return TokenUsage(
+        input_tokens=estimate_tokens(prompt_input),
+        output_tokens=estimate_tokens(answer_text),
+        estimated=True,
+    )
+
+
+def _usage_value(usage: Any, *names: str) -> int:
+    for name in names:
+        value = getattr(usage, name, None)
+        if value is None and isinstance(usage, dict):
+            value = usage.get(name)
+        if value is not None:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return 0
+    return 0
+
+
 @traceable(run_type="llm", name="agent_synthesize")
 async def synthesize_answer(
     generator_client: Any | None,
@@ -154,17 +183,21 @@ async def synthesize_answer(
     if max_output_tokens is not None:
         request["max_output_tokens"] = max_output_tokens
     response = generator_client.responses.create(**request)
+    raw_output = response.get("output_text") if isinstance(response, dict) else getattr(response, "output_text", "")
+    output_text = str(raw_output or "")
     try:
-        return GroundedAnswer(**json.loads(response.output_text))
+        answer = GroundedAnswer(**json.loads(output_text))
+        return answer.model_copy(update={"token_usage": _response_usage(response, prompt_input=prompt_input, answer_text=answer.answer)})
     except (TypeError, ValueError, json.JSONDecodeError):
-        ids = re.findall(r"\[(DOC-\d{3}|NTSB(?:-API)?-\d{3})\]", str(response.output_text))
-        return GroundedAnswer(
-            answer=str(response.output_text or "").strip() or "I don't have that information in my sources.",
+        ids = re.findall(r"\[(DOC-\d{3}|NTSB(?:-API)?-\d{3})\]", output_text)
+        text = output_text.strip() or "I don't have that information in my sources."
+        answer = GroundedAnswer(
+            answer=text,
             evidence_ids=ids,
-            abstained=str(response.output_text or "").strip().lower()
-            == "i don't have that information in my sources.",
+            abstained=text.lower() == "i don't have that information in my sources.",
             limitations=["Generator returned unstructured output; citation IDs were extracted from text."],
         )
+        return answer.model_copy(update={"token_usage": _response_usage(response, prompt_input=prompt_input, answer_text=text)})
 
 
 def validate_grounded_answer(

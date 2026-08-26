@@ -35,6 +35,7 @@ user input + session context
 | **Controlled routing** | Selects technical documents, NTSB records, both sources or abstention before generating an answer. |
 | **Grounded answers** | Uses only retrieved evidence, preserves numeric precision and cites the supporting sources. |
 | **Conversation memory** | PostgreSQL sessions preserve turns; bounded summaries resolve follow-ups without treating conversation history as aviation evidence. **In progress.** |
+| **Chat UI** | Streamlit chatbot with persistent sessions, source inspection, model visibility and token telemetry. |
 
 Interactive NTSB queries run against the synchronized local index. The external API is reserved for synchronization and selected-case detail, keeping broad searches deterministic and API usage bounded.
 
@@ -72,11 +73,12 @@ For the containerized runtime, point `DATABASE_URL` to the prepared Supabase pro
 
 ```bash
 docker compose run --rm model-init
+docker compose up -d chat
 docker compose up -d dashboard
 docker compose run --rm worker python -m rag.query_test_memory
 ```
 
-Open `http://localhost:8501`. Additional agent, evaluation, synchronization and deployment commands are documented in [DOCKER.md](DOCKER.md).
+Open the chat at `http://localhost:8502` or the evaluation dashboard at `http://localhost:8501`. Additional agent, evaluation, synchronization and deployment commands are documented in [DOCKER.md](DOCKER.md).
 
 ## Boundaries
 

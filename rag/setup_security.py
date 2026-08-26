@@ -38,7 +38,11 @@ def install_torch():
         subprocess.check_call([
             sys.executable, "-m", "pip", "install",
             "--index-url", "https://download.pytorch.org/whl/cpu",
-            "torch", "transformers",
+            "torch",
+        ])
+        subprocess.check_call([
+            sys.executable, "-m", "pip", "install",
+            "transformers",
         ])
         return check_torch()
     except subprocess.CalledProcessError as e:
@@ -50,8 +54,8 @@ def check_hf_token():
         return True, "HF_TOKEN is set."
     return False, (
         "HF_TOKEN is missing.\n"
-        "  → Create a read token at https://huggingface.co/settings/tokens\n"
-        "  → Then set HF_TOKEN=hf_xxxxx in your .env file"
+        "  -> Create a read token at https://huggingface.co/settings/tokens\n"
+        "  -> Then set HF_TOKEN=hf_xxxxx in your .env file"
     )
 
 
@@ -70,8 +74,8 @@ def check_license():
         if "403" in err or "gated" in err.lower() or "must login" in err.lower():
             return False, (
                 "License not accepted or token invalid.\n"
-                f"  → Visit https://huggingface.co/{PROMPT_GUARD_MODEL}\n"
-                "  → Click 'Agree and access repository', then re-run this setup"
+                f"  -> Visit https://huggingface.co/{PROMPT_GUARD_MODEL}\n"
+                "  -> Click 'Agree and access repository', then re-run this setup"
             )
         return False, f"Unexpected error checking model access: {e}"
 
@@ -114,8 +118,8 @@ def smoke_test():
         label_b, score_b = detector.classify(SMOKE_BENIGN)
 
         lines = [
-            f"malicious sample → {label_m} ({score_m:.4f})",
-            f"benign sample    → {label_b} ({score_b:.4f})",
+            f"malicious sample -> {label_m} ({score_m:.4f})",
+            f"benign sample    -> {label_b} ({score_b:.4f})",
         ]
         ok = label_m == "MALICIOUS" and label_b == "BENIGN"
         return ok, ("PASSED: " if ok else "FAILED: ") + " | ".join(lines)

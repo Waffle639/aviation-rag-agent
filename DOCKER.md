@@ -4,7 +4,19 @@ Docker empaqueta el runtime del proyecto: Python 3.12, dependencias, Streamlit, 
 
 ## Uso Principal
 
-Arrancar el dashboard contra Supabase:
+Arrancar el chatbot contra Supabase:
+
+```bash
+docker compose up -d chat
+```
+
+Abrir:
+
+```text
+http://localhost:8502
+```
+
+Arrancar el dashboard de evaluaciones contra Supabase:
 
 ```bash
 docker compose up -d dashboard
@@ -54,6 +66,14 @@ docker compose down
 ```
 
 ## Deploy
+
+Construir la imagen web del chatbot:
+
+```bash
+docker build --target chat -t aviation-rag-chat:latest .
+```
+
+La imagen `chat` incluye el agente, memoria PostgreSQL, Streamlit, OpenAI, LangGraph, PyTorch CPU y Prompt Guard. Necesita `DATABASE_URL`, `OPENAI_API_KEY` y, si Prompt Guard no está cacheado o el modelo es gated, `HF_TOKEN`.
 
 Construir la imagen web del dashboard:
 

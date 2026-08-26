@@ -1,4 +1,20 @@
 services:
+  chat:
+    build:
+      context: .
+      target: chat
+    image: aviation-rag-chat:local
+    env_file:
+      - .env
+    environment:
+      HF_HOME: /opt/huggingface
+      TRANSFORMERS_CACHE: /opt/huggingface/transformers
+    volumes:
+      - hf-cache:/opt/huggingface
+    ports:
+      - "127.0.0.1:8502:8501"
+    restart: unless-stopped
+
   dashboard:
     build:
       context: .

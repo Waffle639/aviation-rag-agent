@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import time
+
 from agent.dependencies import AgentDependencies
 from agent.graph import build_graph
-from agent.schemas import AgentResult, AgentState
+from agent.schemas import AgentResult, AgentState, TokenUsage
+from rag.result import estimate_tokens
 
 
 def build_default_dependencies() -> AgentDependencies:
@@ -43,6 +46,7 @@ class AviationAgentService:
         self.graph = build_graph(self.deps)
 
     async def arun(self, question: str, *, session_id: str | None = None) -> AgentResult:
+        started = time.perf_counter()
         conversation_context = None
         if session_id is not None:
             if self.deps.memory_store is None:
@@ -62,6 +66,15 @@ class AviationAgentService:
         raw = await self.graph.ainvoke(initial.model_dump())
         state = AgentState.model_validate(raw)
         answer = state.final_answer.answer if state.final_answer else "I don't have that information in my sources."
+        timings_ms = dict(state.timings_ms)
+        timings_ms["total"] = (time.perf_counter() - started) * 1000
+        token_usage = state.final_answer.token_usage if state.final_answer else None
+        if token_usage is None:
+            token_usage = TokenUsage(
+                input_tokens=estimate_tokens((state.conversation_context or "") + "\n" + (state.original_question or question)),
+                output_tokens=estimate_tokens(answer),
+                estimated=True,
+            )
         if session_id is not None and self.deps.memory_store is not None:
             self.deps.memory_store.append_message(session_id, role="user", content=state.original_question or question)
             self.deps.memory_store.append_message(
@@ -70,8 +83,16 @@ class AviationAgentService:
                 content=answer,
                 metadata={
                     "evidence_ids": state.final_answer.evidence_ids if state.final_answer else [],
+                    "evidence": [item.model_dump() for item in state.all_evidence],
                     "abstained": state.final_answer.abstained if state.final_answer else True,
                     "standalone_question": state.standalone_question,
+                    "model_name": self.deps.model_name,
+                    "token_usage": token_usage.model_dump() if token_usage else None,
+                    "timings_ms": timings_ms,
+                    "route": state.route.model_dump() if state.route else None,
+                    "tool_calls": [call.model_dump() for call in state.tool_calls],
+                    "warnings": state.warnings + (state.final_answer.limitations if state.final_answer else []),
+                    "fallbacks": [fallback.model_dump() for fallback in state.fallbacks],
                 },
             )
             self.deps.memory_store.compact_if_needed(
@@ -94,6 +115,9 @@ class AviationAgentService:
             fallbacks=state.fallbacks,
             warnings=state.warnings + (state.final_answer.limitations if state.final_answer else []),
             abstained=state.final_answer.abstained if state.final_answer else True,
+            model_name=self.deps.model_name,
+            token_usage=token_usage,
+            timings_ms=timings_ms,
         )
 
     def draw_mermaid(self) -> str:

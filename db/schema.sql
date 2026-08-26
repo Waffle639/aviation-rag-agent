@@ -76,9 +76,11 @@ create schema if not exists conversation;
 create table if not exists conversation.sessions (
     id uuid primary key,
     user_id uuid,
+    title text,
     summary jsonb not null default '{}'::jsonb,
     compacted_through integer not null default 0,
     version integer not null default 1,
+    archived_at timestamptz,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );
@@ -100,6 +102,10 @@ create index if not exists idx_conversation_messages_session_sequence
 
 create index if not exists idx_conversation_sessions_updated_at
     on conversation.sessions (updated_at desc);
+
+create index if not exists idx_conversation_sessions_active_updated_at
+    on conversation.sessions (updated_at desc)
+    where archived_at is null;
 
 -- ---------------------------------------------------------------------------
 -- NTSB structured aviation case index

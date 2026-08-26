@@ -28,6 +28,16 @@ class ConversationMessage(BaseModel):
     created_at: datetime | None = None
 
 
+class ConversationSession(BaseModel):
+    id: str
+    title: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    message_count: int = 0
+    total_tokens: int = 0
+    last_message: str | None = None
+
+
 class ConversationContext(BaseModel):
     session_id: str
     summary: dict[str, Any] = Field(default_factory=dict)
@@ -66,7 +76,7 @@ class ConversationContext(BaseModel):
 
 
 class ConversationMemoryStore(Protocol):
-    def create_session(self) -> str:
+    def create_session(self, title: str | None = None) -> str:
         ...
 
     def session_exists(self, session_id: str) -> bool:
@@ -109,7 +119,24 @@ class PostgresConversationMemoryStore:
             raise RuntimeError("DATABASE_URL is required for conversation memory.")
         return psycopg2.connect(self._database_url, options="-c statement_timeout=10000")
 
-    def create_session(self) -> str:
+    def ensure_chat_schema(self) -> None:
+        connection = self._connect()
+        try:
+            with connection:
+                with connection.cursor() as cursor:
+                    cursor.execute("alter table conversation.sessions add column if not exists title text")
+                    cursor.execute("alter table conversation.sessions add column if not exists archived_at timestamptz")
+                    cursor.execute(
+                        """
+                        create index if not exists idx_conversation_sessions_active_updated_at
+                        on conversation.sessions (updated_at desc)
+                        where archived_at is null
+                        """
+                    )
+        finally:
+            connection.close()
+
+    def create_session(self, title: str | None = None) -> str:
         session_id = str(uuid.uuid4())
         connection = self._connect()
         try:
@@ -124,7 +151,118 @@ class PostgresConversationMemoryStore:
                     )
         finally:
             connection.close()
+        if title:
+            self.set_title_if_empty(session_id, title)
         return session_id
+
+    def list_sessions(self, *, limit: int = 50, search: str | None = None) -> list[ConversationSession]:
+        connection = self._connect()
+        try:
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                params: list[Any] = []
+                where = "where s.archived_at is null"
+                if search:
+                    where += " and coalesce(s.title, '') ilike %s"
+                    params.append(f"%{search.strip()}%")
+                params.append(max(1, min(limit, 200)))
+                cursor.execute(
+                    f"""
+                    select
+                        s.id::text,
+                        s.title,
+                        s.created_at,
+                        s.updated_at,
+                        count(m.id)::int as message_count,
+                        coalesce(sum(
+                            case
+                                when m.role = 'assistant'
+                                 and (m.metadata->'token_usage'->>'total_tokens') ~ '^[0-9]+$'
+                                then (m.metadata->'token_usage'->>'total_tokens')::int
+                                else 0
+                            end
+                        ), 0)::int as total_tokens,
+                        (
+                            select content
+                            from conversation.messages lm
+                            where lm.session_id = s.id
+                            order by lm.sequence_number desc
+                            limit 1
+                        ) as last_message
+                    from conversation.sessions s
+                    left join conversation.messages m on m.session_id = s.id
+                    {where}
+                    group by s.id, s.title, s.created_at, s.updated_at
+                    order by s.updated_at desc
+                    limit %s
+                    """,
+                    params,
+                )
+                return [ConversationSession(**row) for row in cursor.fetchall()]
+        finally:
+            connection.close()
+
+    def load_messages(self, session_id: str) -> list[ConversationMessage]:
+        connection = self._connect()
+        try:
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    """
+                    select sequence_number, role, content, token_count, metadata, created_at
+                    from conversation.messages
+                    where session_id = %s
+                    order by sequence_number asc
+                    """,
+                    (session_id,),
+                )
+                return [ConversationMessage(**row) for row in cursor.fetchall()]
+        finally:
+            connection.close()
+
+    def rename_session(self, session_id: str, title: str) -> None:
+        connection = self._connect()
+        try:
+            with connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        update conversation.sessions
+                        set title = %s, updated_at = now()
+                        where id = %s and archived_at is null
+                        """,
+                        (_clean_title(title), session_id),
+                    )
+                    if cursor.rowcount == 0:
+                        raise KeyError(f"Conversation session not found: {session_id}")
+        finally:
+            connection.close()
+
+    def delete_session(self, session_id: str) -> None:
+        connection = self._connect()
+        try:
+            with connection:
+                with connection.cursor() as cursor:
+                    cursor.execute("delete from conversation.sessions where id = %s", (session_id,))
+                    if cursor.rowcount == 0:
+                        raise KeyError(f"Conversation session not found: {session_id}")
+        finally:
+            connection.close()
+
+    def set_title_if_empty(self, session_id: str, title: str) -> None:
+        cleaned = _clean_title(title)
+        connection = self._connect()
+        try:
+            with connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        update conversation.sessions
+                        set title = %s, updated_at = now()
+                        where id = %s and nullif(btrim(coalesce(title, '')), '') is null
+                        """,
+                        (cleaned, session_id),
+                    )
+        finally:
+            connection.close()
 
     def session_exists(self, session_id: str) -> bool:
         connection = self._connect()
@@ -460,3 +598,12 @@ def _extract_aircraft(text: str) -> str | None:
         if match:
             return match.group(1)
     return None
+
+
+def _clean_title(title: str | None) -> str:
+    text = re.sub(r"\s+", " ", str(title or "")).strip()
+    if not text:
+        return "Untitled chat"
+    if len(text) <= 72:
+        return text
+    return text[:69].rstrip() + "..."

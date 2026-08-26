@@ -83,11 +83,25 @@ class DetailRequest(BaseModel):
         return self
 
 
+class TokenUsage(BaseModel):
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    estimated: bool = False
+
+    @model_validator(mode="after")
+    def fill_total(self) -> "TokenUsage":
+        if self.total_tokens <= 0:
+            self.total_tokens = max(0, self.input_tokens) + max(0, self.output_tokens)
+        return self
+
+
 class GroundedAnswer(BaseModel):
     answer: str
     evidence_ids: list[str] = Field(default_factory=list)
     abstained: bool = False
     limitations: list[str] = Field(default_factory=list)
+    token_usage: TokenUsage | None = None
 
 
 class AgentResult(BaseModel):
@@ -102,6 +116,9 @@ class AgentResult(BaseModel):
     fallbacks: list[FallbackRecord] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     abstained: bool = False
+    model_name: str | None = None
+    token_usage: TokenUsage | None = None
+    timings_ms: dict[str, float] = Field(default_factory=dict)
 
 
 class AgentState(BaseModel):
@@ -119,6 +136,7 @@ class AgentState(BaseModel):
     fallbacks: list[FallbackRecord] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     final_answer: GroundedAnswer | None = None
+    timings_ms: dict[str, float] = Field(default_factory=dict)
 
     @property
     def all_evidence(self) -> list[EvidenceItem]:
