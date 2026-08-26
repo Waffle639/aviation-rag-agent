@@ -67,6 +67,41 @@ create index if not exists idx_documents_tsv
     on documents using gin (texto_tsv);
 
 -- ---------------------------------------------------------------------------
+-- Conversation memory
+-- ---------------------------------------------------------------------------
+-- Full transcripts are kept here. Only a compact summary plus bounded recent
+-- messages are sent to the model on later turns.
+create schema if not exists conversation;
+
+create table if not exists conversation.sessions (
+    id uuid primary key,
+    user_id uuid,
+    summary jsonb not null default '{}'::jsonb,
+    compacted_through integer not null default 0,
+    version integer not null default 1,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create table if not exists conversation.messages (
+    id uuid primary key,
+    session_id uuid not null references conversation.sessions(id) on delete cascade,
+    sequence_number integer not null,
+    role text not null check (role in ('user', 'assistant')),
+    content text not null,
+    token_count integer not null default 0,
+    metadata jsonb not null default '{}'::jsonb,
+    created_at timestamptz not null default now(),
+    unique (session_id, sequence_number)
+);
+
+create index if not exists idx_conversation_messages_session_sequence
+    on conversation.messages (session_id, sequence_number desc);
+
+create index if not exists idx_conversation_sessions_updated_at
+    on conversation.sessions (updated_at desc);
+
+-- ---------------------------------------------------------------------------
 -- NTSB structured aviation case index
 -- ---------------------------------------------------------------------------
 -- NTSB data is kept as a relational read model, not mixed with the manual

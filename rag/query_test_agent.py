@@ -13,6 +13,11 @@ from rag.guardrails import GuardrailError, RAG_SECURITY, warmup_security
 
 
 def _print_summary(result, *, verbose: bool) -> None:
+    if getattr(result, "session_id", None):
+        print(f"\nSession: {result.session_id}")
+    if verbose and getattr(result, "standalone_question", None):
+        print(f"\nStandalone question: {result.standalone_question}")
+
     route = result.route
     print("\nRoute:")
     if route is None:

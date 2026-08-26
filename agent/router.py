@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from html import escape
 import re
 from typing import Any
 
@@ -40,12 +41,14 @@ def deterministic_route(question: str) -> RouteDecision:
     if not has_aviation:
         return RouteDecision(
             route="abstain",
+            standalone_question=question,
             reason="The question is outside the aviation sources.",
         )
 
     if has_accident and has_documents:
         return RouteDecision(
             route="both",
+            standalone_question=question,
             document_query=question,
             accident_question=question,
             reason="The question contains both technical/documentation and accident-record intent.",
@@ -53,11 +56,13 @@ def deterministic_route(question: str) -> RouteDecision:
     if has_accident:
         return RouteDecision(
             route="accidents",
+            standalone_question=question,
             accident_question=question,
             reason="The question asks about accident records or NTSB case details.",
         )
     return RouteDecision(
         route="documents",
+        standalone_question=question,
         document_query=question,
         reason="Defaulting to the document path because no accident-record intent was detected.",
     )
@@ -68,7 +73,12 @@ class RouterService:
         self.model = model
 
     @traceable(run_type="chain", name="agent_router")
-    async def route(self, question: str) -> tuple[RouteDecision, list[FallbackRecord]]:
+    async def route(
+        self,
+        question: str,
+        *,
+        conversation_context: str | None = None,
+    ) -> tuple[RouteDecision, list[FallbackRecord]]:
         if self.model is None:
             return deterministic_route(question), [
                 FallbackRecord(
@@ -81,9 +91,20 @@ class RouterService:
 
         try:
             structured = self.model.with_structured_output(RouteDecision)
+            human = question
+            if conversation_context:
+                human = f"""
+<conversation_context>
+{escape(conversation_context)}
+</conversation_context>
+
+<current_question>
+{escape(question)}
+</current_question>
+"""
             messages = [
                 ("system", ROUTER_PROMPT),
-                ("human", question),
+                ("human", human),
             ]
             if hasattr(structured, "ainvoke"):
                 return await structured.ainvoke(messages), []

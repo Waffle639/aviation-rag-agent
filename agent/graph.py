@@ -17,6 +17,10 @@ from agent.tools import AgentTools
 
 class GraphState(TypedDict, total=False):
     question: str
+    original_question: str | None
+    session_id: str | None
+    conversation_context: str | None
+    standalone_question: str | None
     route: dict[str, Any] | None
     document_evidence: list[dict[str, Any]]
     accident_evidence: list[dict[str, Any]]
@@ -72,12 +76,17 @@ def build_graph(deps: AgentDependencies):
             _run_detector(cleaned)
             moderate(cleaned, label="question")
         state.question = cleaned
+        state.original_question = state.original_question or cleaned
         return _dump(state)
 
     async def route_question(raw: dict[str, Any]) -> dict[str, Any]:
         state = _state(raw)
-        decision, fallbacks = await router.route(state.question)
+        decision, fallbacks = await router.route(
+            state.question,
+            conversation_context=state.conversation_context,
+        )
         state.route = decision
+        state.standalone_question = decision.standalone_question or state.question
         state.fallbacks.extend(fallbacks)
         return _dump(state)
 
@@ -103,14 +112,14 @@ def build_graph(deps: AgentDependencies):
             tasks.append((
                 "search_embedded_documents",
                 tools.search_embedded_documents(
-                    state.route.document_query or state.question,
+                    state.route.document_query or state.standalone_question or state.question,
                     top_k=deps.max_document_results,
                 ),
             ))
         if "accidents" in state.route.sources:
             tasks.append((
                 "search_accident_index",
-                tools.search_accident_index(state.route.accident_question or state.question),
+                tools.search_accident_index(state.route.accident_question or state.standalone_question or state.question),
             ))
 
         results = await asyncio.gather(*[_run_tool(name, task) for name, task in tasks])
@@ -138,7 +147,7 @@ def build_graph(deps: AgentDependencies):
     async def assess_detail_policy(raw: dict[str, Any]) -> dict[str, Any]:
         state = _state(raw)
         state.detail_requests = select_ntsb_detail_requests(
-            state.question,
+            state.standalone_question or state.question,
             state.accident_evidence,
             max_requests=deps.max_ntsb_detail_calls,
         )
@@ -179,9 +188,14 @@ def build_graph(deps: AgentDependencies):
         answer = await synthesize_answer(
             deps.generator_client,
             model_name=deps.model_name,
-            question=state.question,
+            question=state.standalone_question or state.question,
             evidence=state.all_evidence,
             warnings=state.warnings,
+            conversation_context=state.conversation_context,
+            max_input_tokens=deps.max_input_tokens,
+            max_evidence_tokens=deps.max_evidence_tokens,
+            max_output_tokens=deps.max_output_tokens,
+            safety_margin_tokens=deps.context_safety_margin_tokens,
         )
         state.final_answer = answer
         return _dump(state)

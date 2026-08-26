@@ -15,6 +15,7 @@ class RouteDecision(BaseModel):
     """Router output. It only chooses which retrieval path to run."""
 
     route: RouteName
+    standalone_question: str | None = None
     document_query: str | None = None
     accident_question: str | None = None
     reason: str
@@ -91,6 +92,8 @@ class GroundedAnswer(BaseModel):
 
 class AgentResult(BaseModel):
     question: str
+    session_id: str | None = None
+    standalone_question: str | None = None
     route: RouteDecision | None = None
     answer: str
     evidence: list[EvidenceItem] = Field(default_factory=list)
@@ -103,6 +106,10 @@ class AgentResult(BaseModel):
 
 class AgentState(BaseModel):
     question: str
+    original_question: str | None = None
+    session_id: str | None = None
+    conversation_context: str | None = None
+    standalone_question: str | None = None
     route: RouteDecision | None = None
     document_evidence: list[EvidenceItem] = Field(default_factory=list)
     accident_evidence: list[EvidenceItem] = Field(default_factory=list)

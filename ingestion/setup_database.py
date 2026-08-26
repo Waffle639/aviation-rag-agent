@@ -88,9 +88,18 @@ def verify_schema():
                                'metrics', 'feedback'
                            )),
                         (select count(*) from information_schema.tables
+                         where table_schema = 'conversation'
+                           and table_name in ('sessions', 'messages')),
+                        (select count(*) from pg_indexes
+                         where schemaname = 'conversation'
+                           and indexname in (
+                               'idx_conversation_messages_session_sequence',
+                               'idx_conversation_sessions_updated_at'
+                           )),
+                        (select count(*) from information_schema.tables
                          where table_schema = 'ntsb'
-                           and table_name in (
-                               'cases', 'aircraft', 'events', 'findings', 'airports',
+                            and table_name in (
+                                'cases', 'aircraft', 'events', 'findings', 'airports',
                                'detail_cache', 'sync_state', 'sync_runs'
                            ))
                 """)
@@ -100,7 +109,8 @@ def verify_schema():
                     extension, table_docs, table_parents,
                     idx_docs, idx_parents, func_similar,
                     func_similar_parents, func_similar_parents_hybrid,
-                    eval_tables, ntsb_tables,
+                    eval_tables, conversation_tables, conversation_indexes,
+                    ntsb_tables,
                 ) = row
         finally:
             connection.close()
@@ -115,6 +125,8 @@ def verify_schema():
             and func_similar_parents == 1
             and func_similar_parents_hybrid == 1
             and eval_tables == 9
+            and conversation_tables == 2
+            and conversation_indexes == 2
             and ntsb_tables == 8
         )
         if ok:
@@ -126,7 +138,10 @@ def verify_schema():
             f"find_similar={func_similar}, "
             f"find_similar_parents={func_similar_parents}, "
             f"find_similar_parents_hybrid={func_similar_parents_hybrid}, "
-            f"evaluation_tables={eval_tables}, ntsb_tables={ntsb_tables}"
+            f"evaluation_tables={eval_tables}, "
+            f"conversation_tables={conversation_tables}, "
+            f"conversation_indexes={conversation_indexes}, "
+            f"ntsb_tables={ntsb_tables}"
         )
     except Exception as e:
         return False, f"Schema check failed: {e}"

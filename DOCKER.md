@@ -28,6 +28,13 @@ Ejecutar el agente:
 docker compose run --rm worker python -m rag.query_test_agent "your question"
 ```
 
+Ejecutar el agente con memoria persistente:
+
+```bash
+docker compose run --rm worker python -m rag.query_test_memory
+docker compose run --rm worker python -m rag.query_test_memory --session <session-uuid> "follow-up question"
+```
+
 Ejecutar evaluaciones:
 
 ```bash

@@ -22,6 +22,7 @@ omit = [
     "rag/hybrid_debug.py",
     "rag/query_test.py",
     "rag/query_test_agent.py",
+    "rag/query_test_memory.py",
     "rag/query_test_ntsb.py",
     "rag/setup_security.py",
     "ntsb/postgres_repository.py",
